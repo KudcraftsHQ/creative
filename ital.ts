@@ -1,0 +1,12 @@
+import { createCanvas } from "@napi-rs/canvas";
+import { registerAll } from "@creative/core";
+registerAll(true);
+const c = createCanvas(900, 260);
+const ctx = c.getContext("2d");
+ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, 900, 260);
+ctx.fillStyle = "#111";
+ctx.font = '88px "Anton"';        ctx.fillText("HARGA GROSIR", 30, 100);
+ctx.font = 'italic 88px "Anton"'; ctx.fillText("HARGA GROSIR", 30, 220);
+const a = ctx.measureText("HARGA GROSIR").width;
+(await import("node:fs")).writeFileSync("/tmp/ital.png", c.toBuffer("image/png"));
+console.log("italic width", Math.round(a));

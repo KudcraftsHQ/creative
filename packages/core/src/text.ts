@@ -39,6 +39,7 @@ const DEFAULTS: Omit<Run, "text"> = {
   color: "#000000",
   tracking: 0,
   transform: "none",
+  italic: false,
 };
 
 /** Normalise a layer's shorthand (`text` + top-level style) into explicit runs. */
@@ -50,6 +51,7 @@ export function expandRuns(layer: TextLayer): Run[] {
     ...(layer.color !== undefined ? { color: layer.color } : {}),
     ...(layer.tracking !== undefined ? { tracking: layer.tracking } : {}),
     ...(layer.transform !== undefined ? { transform: layer.transform } : {}),
+    ...(layer.italic !== undefined ? { italic: layer.italic } : {}),
   };
   const source = layer.runs?.length
     ? layer.runs
@@ -62,7 +64,10 @@ function applyTransform(text: string, t: Run["transform"]): string {
 }
 
 export function fontString(run: Run, scale: number): string {
-  return `${Math.max(1, run.size * scale)}px "${run.font}"`;
+  // Skia synthesises an oblique for a family with no italic face, which is what
+  // the display faces these designs use — Anton and Archivo Black ship roman
+  // only, and a slanted headline is a real thing marketplace creatives do.
+  return `${run.italic ? "italic " : ""}${Math.max(1, run.size * scale)}px "${run.font}"`;
 }
 
 /** Split runs into words, preserving each word's style and explicit breaks. */
