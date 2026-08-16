@@ -69,7 +69,11 @@ API — `GET https://notes.kudcrafts.com/api/documents/<slug>` with the CLI's to
 An image gallery at `/assets` takes a drop of many files (uploaded sequentially, not
 twenty at once) and the editor's image layer can upload or pick from it.
 
-Still open: run designs, and layer reordering / adding a layer in the UI.
+Row actions are icons; right-click works on designs, projects, gallery images and
+layers, and every menu entry is reachable another way too.
+
+Still open: run designs, and *adding* a layer from the UI — reordering, duplicating
+and deleting one are there, but a new layer still comes from the CLI or MCP.
 
 ### 4. Deployment (live)
 
