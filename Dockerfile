@@ -124,6 +124,12 @@ RUN cd apps/api && bunx prisma generate
 
 EXPOSE 3000
 
-# Migrations run here, on the web application only. The worker is started with a
-# different command and must not race it.
-CMD ["sh", "-c", "cd /app/apps/api && bunx prisma migrate deploy && cd /app && bun apps/api/dist/index.js"]
+# One image, two roles, chosen by APP_ROLE.
+#
+# Not by Coolify's start command: that field only applies to nixpacks builds and
+# is silently ignored for a Dockerfile, so the worker application spent its first
+# deployment running a second copy of the API and quietly rendering nothing.
+#
+# Migrations run in the web role only, so the worker cannot race them.
+ENV APP_ROLE=web
+CMD ["sh", "-c", "if [ \"$APP_ROLE\" = \"worker\" ]; then exec bun apps/api/src/worker.ts; else cd /app/apps/api && bunx prisma migrate deploy && cd /app && exec bun apps/api/dist/index.js; fi"]
