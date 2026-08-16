@@ -104,6 +104,9 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 # The worker runs from source rather than a second bundle, and the API's src is
 # what it imports — both ship as-is.
 COPY --from=builder /app/apps/api/src ./apps/api/src
+# Signup is closed on the deployed instance, so provisioning an account means
+# running this inside the container. It has to ship as source.
+COPY --from=builder /app/apps/api/scripts ./apps/api/scripts
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/templates ./templates
