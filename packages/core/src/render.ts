@@ -144,6 +144,86 @@ function roundRect(ctx: SKRSContext2D, b: Box, r: number): void {
 }
 
 /**
+ * The outline of a vertical stack of overlapping line boxes, as one polygon.
+ *
+ * Filling the boxes one at a time is what makes a wrapped headline read as a pile
+ * of separate cards: every box rounds its own four corners, so each step in width
+ * leaves a rounded ledge above a rounded notch, and the seam where two boxes meet
+ * shows through as a hairline. Tracing the union once and filling it once is the
+ * whole difference between three stacked bars and one blob.
+ *
+ * The trace is exact rather than smoothed. Where line i+1 is narrower, the right
+ * edge steps in at the bottom of line i; where it is wider, it steps out at the top
+ * of line i+1 — which is where the union boundary actually changes. Adjacent boxes
+ * are assumed to be the only ones that overlap, which holds because they overlap by
+ * one vertical padding and are taller than it.
+ */
+function blobOutline(boxes: Box[]): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  const push = (x: number, y: number) => {
+    const last = pts[pts.length - 1];
+    if (!last || Math.abs(last[0] - x) > 0.01 || Math.abs(last[1] - y) > 0.01) pts.push([x, y]);
+  };
+  const right = (b: Box) => b.x + b.w;
+  const bottom = (b: Box) => b.y + b.h;
+
+  push(right(boxes[0]), boxes[0].y);
+  for (let i = 0; i < boxes.length - 1; i++) {
+    const cur = boxes[i], next = boxes[i + 1];
+    const y = right(next) < right(cur) ? bottom(cur) : next.y;
+    push(right(cur), y);
+    push(right(next), y);
+  }
+  const last = boxes[boxes.length - 1];
+  push(right(last), bottom(last));
+  push(last.x, bottom(last));
+  for (let i = boxes.length - 1; i > 0; i--) {
+    const cur = boxes[i], prev = boxes[i - 1];
+    const y = prev.x >= cur.x ? cur.y : bottom(prev);
+    push(cur.x, y);
+    push(prev.x, y);
+  }
+  push(boxes[0].x, boxes[0].y);
+
+  // The closing point coincides with the start; the corner there is formed by the
+  // wrap-around, so carrying both would round it twice.
+  if (pts.length > 1) {
+    const first = pts[0], end = pts[pts.length - 1];
+    if (Math.abs(first[0] - end[0]) < 0.01 && Math.abs(first[1] - end[1]) < 0.01) pts.pop();
+  }
+  return pts;
+}
+
+/**
+ * A polygon with every corner rounded, convex and concave alike.
+ *
+ * `arcTo` turns whichever way the corner does, so an inward step gets a concave
+ * fillet for free — that is what stops a narrower line below a wider one from
+ * looking like a second card tucked underneath. The radius is clamped per corner to
+ * half of the shorter adjoining edge so a short step cannot swallow its neighbours.
+ */
+function roundPolygon(ctx: SKRSContext2D, pts: Array<[number, number]>, r: number): void {
+  ctx.beginPath();
+  if (pts.length < 3) return;
+
+  const mid = (a: [number, number], b: [number, number]): [number, number] =>
+    [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const len = (a: [number, number], b: [number, number]) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+
+  ctx.moveTo(...mid(pts[pts.length - 1], pts[0]));
+  for (let i = 0; i < pts.length; i++) {
+    const cur = pts[i];
+    const prev = pts[(i - 1 + pts.length) % pts.length];
+    const next = pts[(i + 1) % pts.length];
+    const rr = Math.min(r, len(prev, cur) / 2, len(cur, next) / 2);
+    if (rr > 0.01) ctx.arcTo(cur[0], cur[1], next[0], next[1], rr);
+    else ctx.lineTo(cur[0], cur[1]);
+    ctx.lineTo(...mid(cur, next));
+  }
+  ctx.closePath();
+}
+
+/**
  * The axis-aligned area a rotated box occupies.
  *
  * Reported alongside the box because the box is where the layer was *placed* and
@@ -205,37 +285,39 @@ function paintTextLayer(
 
   // In `grow` the box hugs the text; in `fit` the frame is fixed and the text sits
   // inside it. Either way the first line starts one padding down from the top.
+  //
+  // Per-line boxes overlap by their vertical padding so a wrapped headline reads as
+  // one shape rather than a stack of separate bars — which only holds if they are
+  // painted as one shape too, below.
+  const lineBoxes: Box[] = [];
   let cy = box.y;
+  for (const line of layout.lines) {
+    const lineH = line.height * layer.lineHeight;
+    const w = line.width + padX * 2;
+    const h = lineH + padY * 2;
+    const alignOffset = layer.align === "center" ? (box.w - w) / 2
+      : layer.align === "right" ? box.w - w
+      : 0;
+    lineBoxes.push({ x: box.x + alignOffset, y: cy, w, h });
+    cy += perLine && drawBox ? h - padY : lineH;
+  }
 
-  if (drawBox && !perLine) {
+  if (drawBox) {
     setShadow(ctx, layer.shadow);
     ctx.fillStyle = layer.box.fill!;
-    roundRect(ctx, box, layer.box.radius);
+    if (!perLine) roundRect(ctx, box, layer.box.radius);
+    else roundPolygon(ctx, blobOutline(lineBoxes), layer.box.radius);
     ctx.fill();
     clearShadow(ctx);
   }
 
-  for (const line of layout.lines) {
-    const lineH = line.height * layer.lineHeight;
-    const boxW = line.width + padX * 2;
-    const boxH = lineH + padY * 2;
-
-    const alignOffset = layer.align === "center" ? (box.w - boxW) / 2
-      : layer.align === "right" ? box.w - boxW
-      : 0;
-    const bx = box.x + alignOffset;
-
-    if (drawBox && perLine) {
-      setShadow(ctx, layer.shadow);
-      ctx.fillStyle = layer.box.fill!;
-      roundRect(ctx, { x: bx, y: cy, w: boxW, h: boxH }, layer.box.radius);
-      ctx.fill();
-      clearShadow(ctx);
-    }
+  for (const [li, line] of layout.lines.entries()) {
+    const lb = lineBoxes[li];
+    const bx = lb.x;
 
     // Baseline: middle of the line box, nudged down because uppercase display
     // faces sit optically high inside their em box.
-    const baseline = cy + boxH / 2 + line.height * 0.06;
+    const baseline = lb.y + lb.h / 2 + line.height * 0.06;
     let tx = bx + padX;
     ctx.textBaseline = "middle";
 
@@ -258,10 +340,6 @@ function paintTextLayer(
       clearShadow(ctx);
       tx += ctx.measureText(token.text).width;
     }
-
-    // Per-line boxes overlap by their vertical padding so a wrapped headline reads
-    // as one shape rather than a stack of separate bars.
-    cy += perLine && drawBox ? boxH - padY : lineH;
   }
 }
 
