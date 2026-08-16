@@ -253,6 +253,32 @@ async function prepareImage(layer: ImageLayer, baseDir: string) {
   return loadImage(graded);
 }
 
+/**
+ * The rectangle of the source a layer draws from, in source pixels.
+ *
+ * Clamped rather than rejected: a crop that runs off the edge is a slider dragged
+ * too far, not a malformed document, and refusing to render is a worse answer
+ * than drawing the part that exists. A degenerate crop falls back to the whole
+ * image, because a zero-width window would draw nothing at all and look like the
+ * image failing to load.
+ */
+function sourceRect(
+  crop: [number, number, number, number] | undefined,
+  width: number,
+  height: number,
+): { x: number; y: number; w: number; h: number } {
+  if (!crop) return { x: 0, y: 0, w: width, h: height };
+
+  const [cx, cy, cw, ch] = crop;
+  const x = Math.min(Math.max(cx, 0), 1) * width;
+  const y = Math.min(Math.max(cy, 0), 1) * height;
+  const w = Math.min(Math.max(cw, 0) * width, width - x);
+  const h = Math.min(Math.max(ch, 0) * height, height - y);
+
+  if (w < 1 || h < 1) return { x: 0, y: 0, w: width, h: height };
+  return { x, y, w, h };
+}
+
 function paintImageLayer(
   ctx: SKRSContext2D,
   layer: ImageLayer,
@@ -266,18 +292,23 @@ function paintImageLayer(
   }
   setShadow(ctx, layer.shadow);
 
+  // The crop is a window on the source, in its own pixels. Everything below works
+  // against that window rather than the whole image, so `fit` and `focal` mean
+  // what they always meant — just applied to the part that was kept.
+  const src = sourceRect(layer.crop, img.width, img.height);
+
   if (layer.fit === "stretch") {
-    ctx.drawImage(img, box.x, box.y, box.w, box.h);
+    ctx.drawImage(img, src.x, src.y, src.w, src.h, box.x, box.y, box.w, box.h);
   } else {
     const s = layer.fit === "cover"
-      ? Math.max(box.w / img.width, box.h / img.height)
-      : Math.min(box.w / img.width, box.h / img.height);
-    const w = img.width * s, h = img.height * s;
+      ? Math.max(box.w / src.w, box.h / src.h)
+      : Math.min(box.w / src.w, box.h / src.h);
+    const w = src.w * s, h = src.h * s;
     // The focal point is the part of the source kept in frame when cover crops.
     const [fx, fy] = layer.focal;
     const x = layer.fit === "cover" ? box.x + (box.w - w) * fx : box.x + (box.w - w) / 2;
     const y = layer.fit === "cover" ? box.y + (box.h - h) * fy : box.y + (box.h - h) / 2;
-    ctx.drawImage(img, x, y, w, h);
+    ctx.drawImage(img, src.x, src.y, src.w, src.h, x, y, w, h);
   }
   clearShadow(ctx);
   ctx.restore();
@@ -368,7 +399,10 @@ export async function render(doc: Document, opts: RenderOptions = {}): Promise<R
       // Decoded before placing so a layer that declares only a width can take its
       // height from the source's aspect ratio instead of the rest of the canvas.
       const img = await prepareImage(layer, baseDir);
-      const aspect = img.height / img.width;
+      // The aspect of what will actually be drawn — a layer that declares only a
+      // width takes its height from the crop, not from the uncropped original.
+      const src = sourceRect(layer.crop, img.width, img.height);
+      const aspect = src.h / src.w;
       const box = place(layer, canvasSize, placed, (avail) => ({
         w: avail.explicitW || !avail.explicitH ? avail.w : avail.h / aspect,
         h: avail.explicitH || !avail.explicitW ? avail.h : avail.w * aspect,

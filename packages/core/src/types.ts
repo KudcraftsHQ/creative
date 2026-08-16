@@ -120,6 +120,16 @@ export const ImageLayer = z.object({
   fit: z.enum(["cover", "contain", "stretch"]).default("cover"),
   focal: z.tuple([z.number(), z.number()]).default([0.5, 0.5])
     .describe("the point kept in view when cover crops, in 0..1 of the source"),
+  /**
+   * The part of the source to use, as [x, y, w, h] in 0..1 of the original.
+   *
+   * Deliberately a property of the layer rather than an edit to the file: the
+   * asset stays the one thing everything else references, the crop is reversible,
+   * and the document still renders to the same bytes from the same inputs. `fit`
+   * and `focal` then apply to the cropped region, not the original.
+   */
+  crop: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional()
+    .describe("[x, y, w, h] in 0..1 of the source; the region to draw"),
   radius: z.number().default(0),
   color: z.object({
     brightness: z.number().optional(),

@@ -13,7 +13,7 @@
  * not a string: the 3× ratio between the price and the words around it is the
  * design, and it has to be editable as such.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -743,6 +743,124 @@ function Inspector({
   );
 }
 
+/**
+ * Drag on the picture to crop it.
+ *
+ * A crop is a property of the layer, not an edit to the file: the asset stays the
+ * one thing every design references, the crop is reversible, and the document
+ * still renders to the same bytes from the same inputs.
+ *
+ * Dragging is fine here, unlike dragging a layer around the canvas. Position has
+ * to stay anchored so a headline that grows pushes what follows; a crop is a
+ * window on a photograph and there is nothing for it to be relative to.
+ */
+function CropBox({
+  src,
+  crop,
+  onChange,
+}: {
+  src: string;
+  crop?: [number, number, number, number];
+  onChange: (crop: [number, number, number, number] | undefined) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+  const at = (e: React.MouseEvent) => {
+    const r = ref.current!.getBoundingClientRect();
+    return {
+      x: Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1),
+      y: Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1),
+    };
+  };
+
+  const live = drag
+    ? {
+        left: `${Math.min(drag.x0, drag.x1) * 100}%`,
+        top: `${Math.min(drag.y0, drag.y1) * 100}%`,
+        width: `${Math.abs(drag.x1 - drag.x0) * 100}%`,
+        height: `${Math.abs(drag.y1 - drag.y0) * 100}%`,
+      }
+    : crop
+      ? {
+          left: `${crop[0] * 100}%`,
+          top: `${crop[1] * 100}%`,
+          width: `${crop[2] * 100}%`,
+          height: `${crop[3] * 100}%`,
+        }
+      : null;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        ref={ref}
+        className="checkerboard relative cursor-crosshair select-none overflow-hidden rounded-lg border border-neutral-200"
+        onMouseDown={(e) => {
+          const p = at(e);
+          setDrag({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+        }}
+        onMouseMove={(e) => {
+          if (!drag) return;
+          const p = at(e);
+          setDrag({ ...drag, x1: p.x, y1: p.y });
+        }}
+        onMouseUp={() => {
+          if (!drag) return;
+          const w = Math.abs(drag.x1 - drag.x0);
+          const h = Math.abs(drag.y1 - drag.y0);
+          setDrag(null);
+          // A click rather than a drag: too small to be a crop anyone meant.
+          if (w < 0.02 || h < 0.02) return;
+          onChange([
+            Number(Math.min(drag.x0, drag.x1).toFixed(4)),
+            Number(Math.min(drag.y0, drag.y1).toFixed(4)),
+            Number(w.toFixed(4)),
+            Number(h.toFixed(4)),
+          ]);
+        }}
+        onMouseLeave={() => setDrag(null)}
+      >
+        <img src={src} alt="" draggable={false} className="block max-h-40 w-full object-contain" />
+        {live ? (
+          <>
+            {/* Four panels around the selection rather than one over it, so the
+                kept region is the actual image and not a copy of it. */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 bg-neutral-900/50" style={{ height: live.top }} />
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 bg-neutral-900/50"
+              style={{ top: `calc(${live.top} + ${live.height})` }}
+            />
+            <div
+              className="pointer-events-none absolute left-0 bg-neutral-900/50"
+              style={{ top: live.top, height: live.height, width: live.left }}
+            />
+            <div
+              className="pointer-events-none absolute right-0 bg-neutral-900/50"
+              style={{ top: live.top, height: live.height, left: `calc(${live.left} + ${live.width})` }}
+            />
+            <div
+              className="pointer-events-none absolute border-2 border-white"
+              style={live}
+            />
+          </>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+        <span className="flex-1">
+          {crop
+            ? `crop ${Math.round(crop[2] * 100)}% × ${Math.round(crop[3] * 100)}%`
+            : "drag on the picture to crop"}
+        </span>
+        {crop ? (
+          <button onClick={() => onChange(undefined)} className="text-neutral-500 underline hover:text-neutral-900">
+            reset
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /** Upload a new photograph, or take one already in the gallery. */
 function ImageControls({
   layer,
@@ -762,9 +880,11 @@ function ImageControls({
     <Field label="Image">
       <div className="flex flex-col gap-2">
         {typeof layer.src === "string" && layer.src ? (
-          <div className="checkerboard overflow-hidden rounded-lg border border-neutral-200">
-            <img src={layer.src} alt="" className="block max-h-32 w-full object-contain" />
-          </div>
+          <CropBox
+            src={layer.src}
+            crop={layer.crop as [number, number, number, number] | undefined}
+            onChange={(crop) => onPatch({ crop })}
+          />
         ) : null}
 
         <div className="flex gap-1">

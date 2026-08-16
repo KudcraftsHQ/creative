@@ -7,7 +7,8 @@
  * budget actually being met.
  */
 import { describe, expect, test, beforeAll } from "bun:test";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { createCanvas, type Canvas } from "@napi-rs/canvas";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -232,4 +233,57 @@ describe("export", () => {
 
 test("the home directory is the sandbox, not the real one", () => {
   expect(existsSync(process.env.CREATIVE_HOME!)).toBe(true);
+});
+
+describe("crop", () => {
+  const photo = join(process.env.CREATIVE_HOME!, "square.png");
+
+  beforeAll(() => {
+    // A 200×100 source whose left half is red and right half is blue, so a crop
+    // can be checked by what colour comes back rather than by a size alone.
+    const canvas = createCanvas(200, 100);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ff0000";
+    ctx.fillRect(0, 0, 100, 100);
+    ctx.fillStyle = "#0000ff";
+    ctx.fillRect(100, 0, 100, 100);
+    writeFileSync(photo, canvas.toBuffer("image/png"));
+  });
+
+  const pixel = (canvas: Canvas, x: number, y: number) => {
+    const [r, g, b] = canvas.getContext("2d").getImageData(x, y, 1, 1).data;
+    return `${r},${g},${b}`;
+  };
+
+  test("draws only the cropped region", async () => {
+    const { canvas } = await render(
+      doc([{ type: "image", id: "p", src: photo, frame: "full", fit: "stretch", crop: [0.5, 0, 0.5, 1] }]),
+    );
+    // The right half of the source is blue; cropped to it, the whole canvas is.
+    expect(pixel(canvas, 100, 500)).toBe("0,0,255");
+    expect(pixel(canvas, 900, 500)).toBe("0,0,255");
+  });
+
+  test("a layer with only a width takes its height from the crop, not the original", async () => {
+    const { report } = await render(
+      doc([{ type: "image", id: "p", src: photo, frame: { anchor: "top-left", w: 400 }, crop: [0, 0, 0.25, 1] }]),
+    );
+    // The crop is 50×100 — twice as tall as wide — so 400 wide is 800 tall.
+    expect(Math.round(report.layers[0]!.box.h)).toBe(800);
+  });
+
+  test("a crop running off the edge is clamped, not fatal", async () => {
+    const { canvas } = await render(
+      doc([{ type: "image", id: "p", src: photo, frame: "full", fit: "stretch", crop: [0.75, 0, 0.9, 1] }]),
+    );
+    expect(pixel(canvas, 500, 500)).toBe("0,0,255");
+  });
+
+  test("a degenerate crop falls back to the whole image", async () => {
+    const { canvas } = await render(
+      doc([{ type: "image", id: "p", src: photo, frame: "full", fit: "stretch", crop: [0, 0, 0, 0] }]),
+    );
+    expect(pixel(canvas, 100, 500)).toBe("255,0,0");
+    expect(pixel(canvas, 900, 500)).toBe("0,0,255");
+  });
 });
