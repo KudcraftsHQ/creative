@@ -426,16 +426,28 @@ function Inspector({
                 />
                 <input
                   type="number"
-                  className="w-16 rounded border border-neutral-200 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
+                  className="w-14 shrink-0 rounded border border-neutral-200 px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
                   defaultValue={run.size ?? ""}
                   placeholder="64"
                   onBlur={(e) =>
                     setRuns(runs.map((r, j) => (j === i ? { ...r, size: e.target.value ? Number(e.target.value) : undefined } : r)))
                   }
                 />
+                {/* Text beside the swatch, because a run's colour is often a
+                    variable — "@ink" — and a colour input can neither show nor
+                    keep one. Typing wins; the swatch is a shortcut. */}
+                <input
+                  className="w-20 shrink-0 rounded border border-neutral-200 px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
+                  defaultValue={run.color ?? ""}
+                  placeholder="#111111"
+                  onBlur={(e) =>
+                    setRuns(runs.map((r, j) => (j === i ? { ...r, color: e.target.value || undefined } : r)))
+                  }
+                />
                 <input
                   type="color"
-                  className="h-7 w-8 shrink-0 cursor-pointer rounded border border-neutral-200"
+                  aria-label="Pick a colour"
+                  className="h-7 w-7 shrink-0 cursor-pointer rounded border border-neutral-200"
                   value={/^#[0-9a-f]{6}$/i.test(run.color ?? "") ? run.color! : "#111111"}
                   onChange={(e) => setRuns(runs.map((r, j) => (j === i ? { ...r, color: e.target.value } : r)))}
                 />
