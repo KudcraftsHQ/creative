@@ -82,8 +82,11 @@ ENV PORT=3000
 ENV CREATIVE_HOME=/app/.creative
 ENV CREATIVE_TEMPLATES=/app/templates
 
+# curl is not decoration: Coolify's healthcheck shells into the container and runs
+# one, and bun:1-slim ships neither curl nor wget — without it every deployment
+# rolls back as unhealthy however well the app is running.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tzdata ca-certificates \
+ && apt-get install -y --no-install-recommends tzdata ca-certificates curl \
  && ln -fs /usr/share/zoneinfo/Asia/Jakarta /etc/localtime \
  && dpkg-reconfigure -f noninteractive tzdata \
  && rm -rf /var/lib/apt/lists/*
