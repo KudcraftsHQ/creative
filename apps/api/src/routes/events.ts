@@ -19,6 +19,12 @@ const PING_MS = 25_000;
 export const eventsRoute = new Hono().use("*", requireAuth).get("/", (c) => {
   const { userId } = c.get("auth");
 
+  // Told explicitly to every proxy in the path. Cloudflare sits in front of this
+  // in production, and a stream that is buffered or compressed arrives in one
+  // lump at the end — which for live preview is the same as not arriving.
+  c.header("cache-control", "no-cache, no-transform");
+  c.header("x-accel-buffering", "no");
+
   return streamSSE(c, async (stream) => {
     const queue: LibraryEvent[] = [];
     let wake: (() => void) | null = null;

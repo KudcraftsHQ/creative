@@ -62,11 +62,14 @@ default.
 - **No free-drag canvas.** The inspector edits anchors, and writes the same JSON the CLI
   writes.
 
-Not done: the ASCII mockups in the plan at
-https://notes.kudcrafts.com/d/headless-canva-plan could not be read back (that page is
-client-rendered and `readback pull` returns only marks), so both screens were built from
-the description above — worth a look against the mockups. Also open: run designs, an
-upload route for image assets, and project rename/delete in the UI.
+Both screens follow the ASCII mockups in the plan. Reading them needs the reader's own
+API — `GET https://notes.kudcrafts.com/api/documents/<slug>` with the CLI's token, since
+`readback pull` returns only the marks, never the body. Worth knowing next time.
+
+An image gallery at `/assets` takes a drop of many files (uploaded sequentially, not
+twenty at once) and the editor's image layer can upload or pick from it.
+
+Still open: run designs, and layer reordering / adding a layer in the UI.
 
 ### 4. Deployment (live, from the branch)
 
