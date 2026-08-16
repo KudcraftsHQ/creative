@@ -13,6 +13,7 @@
 import { documentText, parseDocument, type Document } from "@creative/core";
 import { prisma } from "../lib/prisma.ts";
 import { publish } from "../lib/events.ts";
+import { remove } from "../lib/storage.ts";
 
 export interface DesignInput {
   name: string;
@@ -78,8 +79,20 @@ export async function updateDesign(ownerId: string, id: string, input: Partial<D
 }
 
 export async function deleteDesign(ownerId: string, id: string): Promise<boolean> {
-  const { count } = await prisma.design.deleteMany({ where: { id, ownerId } });
-  if (count === 0) return false;
+  const design = await prisma.design.findFirst({
+    where: { id, ownerId },
+    select: { id: true, previewKey: true },
+  });
+  if (!design) return false;
+
+  await prisma.design.delete({ where: { id: design.id } });
+
+  // The preview is a cache, so losing it is free and leaving it is a slow leak —
+  // every deleted design would otherwise keep paying for a thumbnail of itself.
+  if (design.previewKey) {
+    await remove(design.previewKey).catch((err) => console.error("[designs] preview delete", err));
+  }
+
   publish({ kind: "design.deleted", designId: id, ownerId });
   return true;
 }

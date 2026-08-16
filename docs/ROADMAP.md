@@ -119,9 +119,24 @@ delete `DISABLE_SIGNUP` and redeploy.
   migrated. `pgbouncer-shared` is wildcard + `auth_query`, so it needed no new config.
 - Prisma through the pooler needs `?pgbouncer=true&connection_limit=1` on `DATABASE_URL`
   and a `DIRECT_URL` that bypasses it for migrations.
-- Assets in S3 via `@aws-sdk/client-s3` with presigned URLs. `src/lib/storage.ts` is
-  written but **no bucket is configured yet**: previews fall back to on-demand rendering,
-  and the worker idles until S3 env is set.
+- Assets are in **Cloudflare R2**: bucket `creative-assets` (WEUR), served publicly on
+  `creative-assets.kudcrafts.com`. Uploads and worker-written previews both land there,
+  and a document references the CDN URL directly — so re-rendering a hundred listings is
+  not a hundred requests through the app. Postgres (`Asset.data`) remains the fallback
+  when no bucket is configured, which is what a local checkout gets.
+- The R2 credentials are a **bucket-scoped API token**, not the account-wide R2
+  permission groups. Verified: read and write on `creative-assets`, `AccessDenied` on
+  `facemap`, `kudcrafts-backup`, `produkai-assets`, and on listing buckets at all.
+
+Two more that cost a deployment each:
+
+- **`APP_ROLE`, not Coolify's start command.** `start_command` applies to nixpacks builds
+  and is silently ignored for a Dockerfile. The worker application ran a second copy of
+  the API — healthy, and rendering nothing — until the image learned to dispatch on
+  `APP_ROLE`. Migrations run in the `web` role only, so the worker cannot race them.
+- **Fonts are vendored** in `assets/fonts`, not fetched. `font add <family>` goes through
+  the GitHub API, whose anonymous quota is sixty requests an hour for the whole host;
+  every deploy spent three, and when the quota went so did the build.
 
 ### 5. Smaller things
 
