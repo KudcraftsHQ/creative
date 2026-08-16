@@ -68,7 +68,33 @@ client-rendered and `readback pull` returns only marks), so both screens were bu
 the description above — worth a look against the mockups. Also open: run designs, an
 upload route for image assets, and project rename/delete in the UI.
 
-### 4. Deployment (in progress)
+### 4. Deployment (live, from the branch)
+
+Both applications are deployed on Coolify project `creative`
+(`pwwtclouploljs7tlj8zl4qw`) on `vienna-1`, built from **branch `creative-web`** —
+not `main`, because the PR is unmerged and awaiting sign-off. Repoint both to `main`
+when it lands.
+
+| | uuid | notes |
+|---|---|---|
+| `creative-web` | `wnejx0ww0qxdpc81s4zxgner` | `http://creative.kudcrafts.com`, healthcheck `/api/health` |
+| `creative-worker` | `a68wlhrc1i5ye9yjozfevuau` | no domain, `bun apps/api/src/worker.ts` |
+
+Three things cost a deployment each and are worth not rediscovering:
+
+- **Bun puts a workspace's dependencies in that workspace's own `node_modules`** and
+  keeps the shared store at the root. A build stage copying only the apps' trees leaves
+  core unable to resolve `zod`. `@napi-rs/canvas` is a direct dependency of the API for
+  the same reason — the bundle keeps it external and resolution never reaches core's tree.
+- **`bun:1-slim` has neither `curl` nor `wget`**, and Coolify's healthcheck runs one
+  inside the container. Without it a perfectly healthy deployment rolls back.
+- **The fqdn is `http://`, not `https://`.** Cloudflare terminates TLS and talks to the
+  origin over HTTP; an `https://` fqdn makes Coolify force a redirect the origin then
+  serves again, forever. Every other `*.kudcrafts.com` app is configured the same way.
+
+Redis is `redis-secondary` database 5; the channel is `creative:events`.
+
+#### Still to do here
 
 - `Dockerfile` — multi-stage, tempe-sadari's shape: install → builder (prisma generate,
   vite build, bun build) → slim runner. Fonts (Anton, Archivo Black, Inter) are installed
