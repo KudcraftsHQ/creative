@@ -105,6 +105,8 @@ export interface LayerReport {
   id: string;
   type: "text" | "image" | "rect";
   box: { x: number; y: number; w: number; h: number };
+  /** Present only when the layer is rotated: the area it actually occupies. */
+  bounds?: { x: number; y: number; w: number; h: number };
   fontSize?: number;
   lines?: number;
   atMinimum?: boolean;
@@ -127,7 +129,16 @@ export interface DocumentLayer {
   frame?: unknown;
   hidden?: boolean;
   text?: string;
-  runs?: Array<{ text: string; font?: string; size?: number; color?: string }>;
+  runs?: Array<{
+    text: string;
+    font?: string;
+    size?: number;
+    color?: string;
+    tracking?: number;
+    transform?: "none" | "upper" | "lower";
+    italic?: boolean;
+    stroke?: { color: string; width: number };
+  }>;
   src?: string;
   fill?: string;
   [key: string]: unknown;

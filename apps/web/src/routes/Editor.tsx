@@ -1,13 +1,19 @@
 /**
- * The editor: layers and lint on the left, the render in the middle, the selected
+ * The editor: layers and lint on the left, the document in the middle, the selected
  * layer on the right.
  *
+ * The middle is the document in one of two forms — the render, or the JSON. They are
+ * the same thing, and the toggle between them is the point: the inspector will always
+ * cover less of the schema than the schema has, because fields land in core first, so
+ * the literal document is always one click away and always editable.
+ *
  * There is no free-drag canvas, and that is a decision rather than a gap. Position
- * comes from anchors and from other layers, so a headline that grows by a line
- * pushes the fine print down instead of colliding with it. Dragging to an absolute
- * pixel throws that away and breaks the next hundred renders — so the inspector
- * edits the same anchors the CLI writes, and the preview is the rendered image
- * rather than a browser's approximation of one.
+ * comes from anchors and from other layers, so a headline that grows by a line pushes
+ * the fine print down instead of colliding with it. Dragging to an absolute pixel
+ * throws that away and breaks the next hundred renders — so the inspector edits the
+ * same anchors the CLI writes, and the preview is the rendered image rather than a
+ * browser's approximation of one. What *is* draggable is what has nothing to be
+ * relative to: the crop window on a photograph.
  *
  * The right panel is a runs table because a text layer is a list of styled spans,
  * not a string: the 3× ratio between the price and the words around it is the
@@ -20,9 +26,11 @@ import { toast } from "sonner";
 import {
   ArrowLeft, AlertTriangle, Info, Type, Image as ImageIcon, Square,
   Eye, EyeOff, Upload, Plus, Trash2, Images, Copy, Download, ArrowUp, ArrowDown,
+  FlipHorizontal, FlipVertical, Italic, Braces,
 } from "lucide-react";
 import {
   api,
+  ApiError,
   renderUrl,
   uploadAsset,
   type Asset,
@@ -34,7 +42,12 @@ import {
   type Project,
 } from "@/lib/api.ts";
 import { useLiveLibrary } from "@/lib/use-live.ts";
-import { Button, Input, Spinner } from "@/components/ui.tsx";
+import { Button, Spinner } from "@/components/ui.tsx";
+import { JsonPane } from "@/components/json-pane.tsx";
+import {
+  Choice, ColorField, Field, Grid3, NumberField, Section, SelectField,
+  SliderField, TextField, Toggle,
+} from "@/components/fields.tsx";
 import {
   IconButton, TooltipProvider,
   ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
@@ -54,7 +67,24 @@ const SIZES: Array<{ label: string; w: number; h: number }> = [
   { label: "9:16", w: 1080, h: 1920 },
 ];
 
-type Run = { text: string; font?: string; size?: number; color?: string };
+type Run = {
+  text: string;
+  font?: string;
+  size?: number;
+  color?: string;
+  tracking?: number;
+  transform?: "none" | "upper" | "lower";
+  italic?: boolean;
+  stroke?: { color: string; width: number };
+};
+
+type Shadow = { color: string; blur: number; x: number; y: number };
+type Crop = [number, number, number, number];
+
+/** `DocumentLayer` is deliberately loose — core owns the schema — so read it as such. */
+const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
+const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+const bool = (v: unknown): boolean => v === true;
 
 const layerIcon = (type: string) =>
   type === "text" ? Type : type === "image" ? ImageIcon : Square;
@@ -66,6 +96,7 @@ export function Editor() {
   useLiveLibrary();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<"preview" | "json">("preview");
   const [renderedAt, setRenderedAt] = useState<number>(() => Date.now());
 
   const design = useQuery({
@@ -94,7 +125,13 @@ export function Editor() {
       queryClient.invalidateQueries({ queryKey: ["design", id] });
       queryClient.invalidateQueries({ queryKey: ["designs"] });
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "That document was refused"),
+    onError: (err) => {
+      // In the JSON view the refusal is shown under the pane, against the text that
+      // caused it. A toast there would be the same message twice, and the shorter
+      // of the two.
+      if (view === "json") return;
+      toast.error(err instanceof Error ? err.message : "That document was refused");
+    },
   });
 
   const patchDesign = useMutation({
@@ -213,6 +250,27 @@ export function Editor() {
             if (value && value !== design.data!.name) patchDesign.mutate({ name: value });
           }}
         />
+
+        {/* the same document, drawn or spelled out */}
+        <div className="flex shrink-0 items-center rounded-lg border border-neutral-200 p-0.5">
+          {([
+            { key: "preview", label: "preview", Icon: ImageIcon },
+            { key: "json", label: "JSON", Icon: Braces },
+          ] as const).map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className={cn(
+                "flex h-6 items-center gap-1.5 rounded px-2 text-xs transition-colors",
+                view === key ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100",
+              )}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+
         <select
           className="h-7 rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-600 outline-none focus:ring-2 focus:ring-neutral-400"
           value={design.data.projectId ?? ""}
@@ -280,6 +338,19 @@ export function Editor() {
                     onSelect={() => duplicateLayer(i)}
                   >
                     Duplicate
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    icon={<FlipHorizontal className="h-3.5 w-3.5" />}
+                    onSelect={() => patchLayer(i, { flipX: !bool(layer.flipX) })}
+                  >
+                    Flip horizontally
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon={<FlipVertical className="h-3.5 w-3.5" />}
+                    onSelect={() => patchLayer(i, { flipY: !bool(layer.flipY) })}
+                  >
+                    Flip vertically
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
@@ -377,17 +448,30 @@ export function Editor() {
           </div>
         </aside>
 
-        {/* preview */}
+        {/* the document — drawn, or spelled out */}
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 overflow-auto bg-neutral-100 p-6">
-          <div className="checkerboard max-h-full overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
-            <img
+          {view === "preview" ? (
+            <div className="checkerboard max-h-full overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
+              <img
+                key={design.data.version}
+                src={renderUrl(design.data.id, design.data.version, 900)}
+                alt={design.data.name}
+                className="block max-h-[calc(100vh-10rem)] w-auto"
+              />
+            </div>
+          ) : (
+            // Keyed on the version so a write from a terminal replaces the text
+            // rather than leaving an edit in progress against a document that has
+            // already moved on.
+            <JsonPane
               key={design.data.version}
-              src={renderUrl(design.data.id, design.data.version, 900)}
-              alt={design.data.name}
-              className="block max-h-[calc(100vh-10rem)] w-auto"
+              doc={doc}
+              onApply={write}
+              saving={save.isPending}
+              rejected={save.error instanceof ApiError ? save.error.message : undefined}
             />
-          </div>
-          <p className="text-xs text-neutral-500">
+          )}
+          <p className="shrink-0 text-xs text-neutral-500">
             {doc.canvas.w}×{doc.canvas.h}
             {" · "}
             {new Date(renderedAt).toLocaleTimeString()}
@@ -401,6 +485,9 @@ export function Editor() {
         <aside className="w-80 shrink-0 overflow-y-auto border-l border-neutral-200 bg-white p-3">
           {current ? (
             <Inspector
+              // Fields hold their own value until they are left, so switching
+              // layers has to give them new ones to hold.
+              key={selected}
               layer={current}
               report={lint.data?.layers.find((l) => l.id === selected)}
               onPatch={(patch) => patchLayer(currentIndex, patch)}
@@ -426,15 +513,6 @@ function Heading({ children, className }: { children: React.ReactNode; className
     <p className={cn("px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400", className)}>
       {children}
     </p>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</span>
-      {children}
-    </label>
   );
 }
 
@@ -470,13 +548,27 @@ function Inspector({
     ? (box.pad as [number, number])
     : [Number(box.pad ?? 0), Number(box.pad ?? 0)];
 
-  const runs: Run[] = layer.runs ?? (layer.text !== undefined
-    ? [{ text: layer.text, font: layer.font as string | undefined, size: layer.size as number | undefined, color: layer.color as string | undefined }]
+  const runs: Run[] = (layer.runs as Run[] | undefined) ?? (layer.text !== undefined
+    ? [{
+        text: layer.text,
+        font: str(layer.font),
+        size: num(layer.size),
+        color: str(layer.color),
+        tracking: num(layer.tracking),
+        transform: str(layer.transform) as Run["transform"],
+        italic: layer.italic === true ? true : undefined,
+      }]
     : []);
 
   /** Editing runs converts a shorthand text layer into a runs layer, once. */
   const setRuns = (next: Run[]) =>
-    onPatch({ runs: next, text: undefined, font: undefined, size: undefined, color: undefined });
+    onPatch({
+      runs: next,
+      text: undefined, font: undefined, size: undefined, color: undefined,
+      tracking: undefined, transform: undefined, italic: undefined,
+    });
+  const patchRun = (i: number, patch: Partial<Run>) =>
+    setRuns(runs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   return (
     <div className="flex flex-col gap-4">
@@ -501,63 +593,12 @@ function Inspector({
           </div>
 
           {runs.map((run, i) => (
-            <div key={i} className="flex flex-col gap-1 rounded-lg border border-neutral-200 p-2">
-              <div className="flex gap-1">
-                <input
-                  className="min-w-0 flex-1 rounded border border-neutral-200 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-neutral-400"
-                  defaultValue={run.text}
-                  onBlur={(e) => {
-                    if (e.target.value === run.text) return;
-                    setRuns(runs.map((r, j) => (j === i ? { ...r, text: e.target.value } : r)));
-                  }}
-                />
-                {runs.length > 1 ? (
-                  <IconButton
-                    label="Remove run"
-                    danger
-                    className="h-7 w-7 shrink-0 border-0"
-                    onClick={() => setRuns(runs.filter((_, j) => j !== i))}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </IconButton>
-                ) : null}
-              </div>
-              <div className="flex gap-1">
-                <input
-                  className="min-w-0 flex-1 rounded border border-neutral-200 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
-                  defaultValue={run.font ?? ""}
-                  placeholder="Anton"
-                  onBlur={(e) => setRuns(runs.map((r, j) => (j === i ? { ...r, font: e.target.value || undefined } : r)))}
-                />
-                <input
-                  type="number"
-                  className="w-14 shrink-0 rounded border border-neutral-200 px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
-                  defaultValue={run.size ?? ""}
-                  placeholder="64"
-                  onBlur={(e) =>
-                    setRuns(runs.map((r, j) => (j === i ? { ...r, size: e.target.value ? Number(e.target.value) : undefined } : r)))
-                  }
-                />
-                {/* Text beside the swatch, because a run's colour is often a
-                    variable — "@ink" — and a colour input can neither show nor
-                    keep one. Typing wins; the swatch is a shortcut. */}
-                <input
-                  className="w-20 shrink-0 rounded border border-neutral-200 px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
-                  defaultValue={run.color ?? ""}
-                  placeholder="#111111"
-                  onBlur={(e) =>
-                    setRuns(runs.map((r, j) => (j === i ? { ...r, color: e.target.value || undefined } : r)))
-                  }
-                />
-                <input
-                  type="color"
-                  aria-label="Pick a colour"
-                  className="h-7 w-7 shrink-0 cursor-pointer rounded border border-neutral-200"
-                  value={/^#[0-9a-f]{6}$/i.test(run.color ?? "") ? run.color! : "#111111"}
-                  onChange={(e) => setRuns(runs.map((r, j) => (j === i ? { ...r, color: e.target.value } : r)))}
-                />
-              </div>
-            </div>
+            <RunRow
+              key={i}
+              run={run}
+              onPatch={(patch) => patchRun(i, patch)}
+              onRemove={runs.length > 1 ? () => setRuns(runs.filter((_, j) => j !== i)) : undefined}
+            />
           ))}
         </div>
       ) : null}
@@ -590,26 +631,19 @@ function Inspector({
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="Inset x">
-          <Input type="number" defaultValue={inset[0]} onBlur={(e) => patchFrame({ inset: [Number(e.target.value), inset[1]] })} />
+          <NumberField value={inset[0]} onCommit={(v) => patchFrame({ inset: [v ?? 0, inset[1]] })} />
         </Field>
         <Field label="Inset y">
-          <Input type="number" defaultValue={inset[1]} onBlur={(e) => patchFrame({ inset: [inset[0], Number(e.target.value)] })} />
+          <NumberField value={inset[1]} onCommit={(v) => patchFrame({ inset: [inset[0], v ?? 0] })} />
         </Field>
         <Field label="Width">
-          <Input
-            type="number"
-            defaultValue={typeof frame.w === "number" ? frame.w : ""}
-            placeholder="auto"
-            onBlur={(e) => patchFrame({ w: e.target.value === "" ? undefined : Number(e.target.value) })}
-          />
+          <NumberField value={num(frame.w)} placeholder="auto" onCommit={(w) => patchFrame({ w })} />
         </Field>
-        <Field label="Gap">
-          <Input
-            type="number"
-            defaultValue={typeof frame.gap === "number" ? frame.gap : ""}
-            placeholder="0"
-            onBlur={(e) => patchFrame({ gap: e.target.value === "" ? undefined : Number(e.target.value) })}
-          />
+        <Field label="Height">
+          <NumberField value={num(frame.h)} placeholder="auto" onCommit={(h) => patchFrame({ h })} />
+        </Field>
+        <Field label="Gap" hint="Distance from the layer this one follows">
+          <NumberField value={num(frame.gap)} placeholder="0" onCommit={(gap) => patchFrame({ gap })} />
         </Field>
       </div>
 
@@ -617,91 +651,97 @@ function Inspector({
         <>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Box">
-              <select
-                className="h-9 rounded-lg border border-neutral-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-neutral-400"
-                value={(box.mode as string) ?? "none"}
-                onChange={(e) => patchBox({ mode: e.target.value })}
-              >
-                <option value="none">none</option>
-                <option value="fit">fit — shrink into the frame</option>
-                <option value="grow">grow — box follows the text</option>
-              </select>
+              <SelectField
+                value={(str(box.mode) ?? "none") as "none" | "fit" | "grow"}
+                onCommit={(mode) => patchBox({ mode })}
+                options={[
+                  { value: "none", label: "none" },
+                  { value: "fit", label: "fit — shrink into the frame" },
+                  { value: "grow", label: "grow — box follows the text" },
+                ]}
+              />
             </Field>
             <Field label="Fill">
-              <div className="flex gap-1">
-                <Input
-                  defaultValue={(box.fill as string) ?? ""}
-                  placeholder="none"
-                  onBlur={(e) => patchBox({ fill: e.target.value || undefined })}
-                />
-                <input
-                  type="color"
-                  className="h-9 w-9 shrink-0 cursor-pointer rounded border border-neutral-200"
-                  value={/^#[0-9a-f]{6}$/i.test((box.fill as string) ?? "") ? (box.fill as string) : "#F5C518"}
-                  onChange={(e) => patchBox({ fill: e.target.value })}
-                />
-              </div>
+              <ColorField value={str(box.fill)} onCommit={(fill) => patchBox({ fill })} fallback="#F5C518" />
             </Field>
             <Field label="Pad x">
-              <Input type="number" defaultValue={pad[0]} onBlur={(e) => patchBox({ pad: [Number(e.target.value), pad[1]] })} />
+              <NumberField value={pad[0]} onCommit={(v) => patchBox({ pad: [v ?? 0, pad[1]] })} />
             </Field>
             <Field label="Pad y">
-              <Input type="number" defaultValue={pad[1]} onBlur={(e) => patchBox({ pad: [pad[0], Number(e.target.value)] })} />
+              <NumberField value={pad[1]} onCommit={(v) => patchBox({ pad: [pad[0], v ?? 0] })} />
             </Field>
             <Field label="Radius">
-              <Input type="number" defaultValue={Number(box.radius ?? 0)} onBlur={(e) => patchBox({ radius: Number(e.target.value) })} />
+              <NumberField value={num(box.radius) ?? 0} onCommit={(radius) => patchBox({ radius: radius ?? 0 })} />
             </Field>
             <Field label="Per line">
-              <select
-                className="h-9 rounded-lg border border-neutral-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-neutral-400"
+              <SelectField
                 value={box.perLine === false ? "no" : "yes"}
-                onChange={(e) => patchBox({ perLine: e.target.value === "yes" })}
-              >
-                <option value="yes">a box per line</option>
-                <option value="no">one box</option>
-              </select>
+                onCommit={(v) => patchBox({ perLine: v === "yes" })}
+                options={[
+                  { value: "yes", label: "a box per line" },
+                  { value: "no", label: "one box" },
+                ]}
+              />
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
+            <Field label="Line height">
+              <NumberField
+                value={num(layer.lineHeight)}
+                placeholder="1.14"
+                step={0.01}
+                onCommit={(lineHeight) => onPatch({ lineHeight })}
+              />
+            </Field>
+            <Field label="Align">
+              <SelectField
+                value={(str(layer.align) ?? "left") as "left" | "center" | "right"}
+                onCommit={(align) => onPatch({ align })}
+                options={[
+                  { value: "left", label: "left" },
+                  { value: "center", label: "center" },
+                  { value: "right", label: "right" },
+                ]}
+              />
+            </Field>
             <Field label="Autofit min">
-              <Input
-                type="number"
-                defaultValue={autofit.min ?? ""}
+              <NumberField
+                value={autofit.min}
                 placeholder="12"
-                onBlur={(e) => onPatch({ autofit: { ...autofit, min: Number(e.target.value) } })}
+                onCommit={(min) => onPatch({ autofit: { ...autofit, min } })}
               />
             </Field>
             <Field label="Autofit max">
-              <Input
-                type="number"
-                defaultValue={autofit.max ?? ""}
+              <NumberField
+                value={autofit.max}
                 placeholder="400"
-                onBlur={(e) => onPatch({ autofit: { ...autofit, max: Number(e.target.value) } })}
+                onCommit={(max) => onPatch({ autofit: { ...autofit, max } })}
               />
             </Field>
           </div>
-
-          <Field label="Align">
-            <div className="flex gap-1">
-              {(["left", "center", "right"] as const).map((a) => (
-                <button
-                  key={a}
-                  onClick={() => onPatch({ align: a })}
-                  className={cn(
-                    "h-8 flex-1 rounded border text-xs",
-                    (layer.align ?? "left") === a
-                      ? "border-neutral-900 bg-neutral-900 text-white"
-                      : "border-neutral-200 hover:bg-neutral-100",
-                  )}
-                >
-                  {a}
-                </button>
-              ))}
-            </div>
-          </Field>
         </>
       ) : null}
+
+      {layer.type === "rect" ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Fill">
+            <ColorField value={str(layer.fill)} onCommit={(fill) => onPatch({ fill })} />
+          </Field>
+          <Field label="Radius">
+            <NumberField value={num(layer.radius) ?? 0} onCommit={(radius) => onPatch({ radius: radius ?? 0 })} />
+          </Field>
+        </div>
+      ) : null}
+
+      {layer.type !== "rect" ? (
+        <ShadowControls
+          shadow={layer.shadow as Shadow | undefined}
+          onCommit={(shadow) => onPatch({ shadow })}
+        />
+      ) : null}
+
+      <TransformControls layer={layer} onPatch={onPatch} />
 
       {report ? (
         <div className="rounded-md bg-neutral-100 p-2 text-xs text-neutral-500">
@@ -710,6 +750,12 @@ function Inspector({
             {Math.round(report.box.x)}, {Math.round(report.box.y)} · {Math.round(report.box.w)}×
             {Math.round(report.box.h)}
           </p>
+          {report.bounds ? (
+            <p>
+              once rotated: {Math.round(report.bounds.x)}, {Math.round(report.bounds.y)} ·{" "}
+              {Math.round(report.bounds.w)}×{Math.round(report.bounds.h)}
+            </p>
+          ) : null}
           {report.fontSize ? (
             <p>
               {report.fontSize}px over {report.lines} line{report.lines === 1 ? "" : "s"}
@@ -743,8 +789,238 @@ function Inspector({
   );
 }
 
+/** One styled span. Its second row is what makes the ratios editable. */
+function RunRow({
+  run,
+  onPatch,
+  onRemove,
+}: {
+  run: Run;
+  onPatch: (patch: Partial<Run>) => void;
+  onRemove?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-neutral-200 p-2">
+      <div className="flex gap-1">
+        <TextField
+          value={run.text}
+          onCommit={(text) => onPatch({ text: text ?? "" })}
+          className="text-sm"
+        />
+        {onRemove ? (
+          <IconButton label="Remove run" danger className="h-8 w-8 shrink-0 border-0" onClick={onRemove}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
+      </div>
+
+      <div className="flex gap-1">
+        <TextField
+          value={run.font}
+          placeholder="Anton"
+          onCommit={(font) => onPatch({ font })}
+          className="text-xs"
+        />
+        <div className="w-16 shrink-0">
+          <NumberField value={run.size} placeholder="64" onCommit={(size) => onPatch({ size })} />
+        </div>
+        <div className="w-[7.5rem] shrink-0">
+          <ColorField value={run.color} onCommit={(color) => onPatch({ color })} placeholder="#111111" />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1">
+        <Toggle
+          pressed={run.italic === true}
+          onPressedChange={(italic) => onPatch({ italic: italic || undefined })}
+          label="Italic — synthesised when the family has no italic face"
+          className="w-8 px-0"
+        >
+          <Italic className="h-3.5 w-3.5" />
+        </Toggle>
+        <div className="min-w-0 flex-1">
+          <SelectField
+            value={run.transform ?? "none"}
+            onCommit={(transform) => onPatch({ transform: transform === "none" ? undefined : transform })}
+            options={[
+              { value: "none", label: "as typed" },
+              { value: "upper", label: "UPPERCASE" },
+              { value: "lower", label: "lowercase" },
+            ]}
+          />
+        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="h-8 shrink-0 rounded-lg border border-neutral-200 px-2 text-[11px] text-neutral-500 hover:bg-neutral-100"
+        >
+          {open ? "less" : "more"}
+        </button>
+      </div>
+
+      {open ? (
+        <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 pt-2">
+          <Field label="Tracking" hint="Letter-spacing, in px at size 100">
+            <NumberField value={run.tracking} placeholder="0" onCommit={(tracking) => onPatch({ tracking })} />
+          </Field>
+          <Field label="Stroke width">
+            <NumberField
+              value={run.stroke?.width}
+              placeholder="0"
+              onCommit={(width) =>
+                onPatch({ stroke: width ? { color: run.stroke?.color ?? "#000000", width } : undefined })
+              }
+            />
+          </Field>
+          {run.stroke ? (
+            <div className="col-span-2">
+              <Field label="Stroke colour">
+                <ColorField
+                  value={run.stroke.color}
+                  onCommit={(color) => onPatch({ stroke: { ...run.stroke!, color: color ?? "#000000" } })}
+                />
+              </Field>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
- * Drag on the picture to crop it.
+ * Rotation, mirroring and opacity — the three that apply to every layer type.
+ *
+ * All three turn about the layer's centre, so none of them moves it: flipping a
+ * photograph does not shift the caption anchored underneath it.
+ */
+function TransformControls({
+  layer,
+  onPatch,
+}: {
+  layer: DocumentLayer;
+  onPatch: (patch: Partial<DocumentLayer>) => void;
+}) {
+  const rotate = num(layer.rotate) ?? 0;
+  const opacity = num(layer.opacity) ?? 1;
+
+  return (
+    <Section
+      title="Transform"
+      right={
+        rotate || bool(layer.flipX) || bool(layer.flipY) || opacity !== 1 ? (
+          <button
+            onClick={() => onPatch({ rotate: 0, flipX: false, flipY: false, opacity: 1 })}
+            className="text-[11px] text-neutral-400 underline hover:text-neutral-900"
+          >
+            reset
+          </button>
+        ) : null
+      }
+    >
+      <div className="flex items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Field label="Rotate">
+            <SliderField
+              value={rotate}
+              min={-180}
+              max={180}
+              onCommit={(v) => onPatch({ rotate: v })}
+              format={(v) => `${v}°`}
+            />
+          </Field>
+        </div>
+        <div className="w-16 shrink-0">
+          <NumberField value={rotate} onCommit={(v) => onPatch({ rotate: v ?? 0 })} />
+        </div>
+      </div>
+
+      <div className="flex gap-1">
+        <Toggle
+          pressed={bool(layer.flipX)}
+          onPressedChange={(flipX) => onPatch({ flipX })}
+          label="Mirror horizontally"
+          className="flex-1"
+        >
+          <FlipHorizontal className="h-3.5 w-3.5" />
+          flip x
+        </Toggle>
+        <Toggle
+          pressed={bool(layer.flipY)}
+          onPressedChange={(flipY) => onPatch({ flipY })}
+          label="Mirror vertically"
+          className="flex-1"
+        >
+          <FlipVertical className="h-3.5 w-3.5" />
+          flip y
+        </Toggle>
+      </div>
+
+      <Field label="Opacity">
+        <SliderField
+          value={opacity}
+          min={0}
+          max={1}
+          step={0.05}
+          onCommit={(v) => onPatch({ opacity: v })}
+          format={(v) => `${Math.round(v * 100)}%`}
+        />
+      </Field>
+    </Section>
+  );
+}
+
+/** A shadow is all four fields or none of them, so the toggle writes all four. */
+function ShadowControls({
+  shadow,
+  onCommit,
+}: {
+  shadow?: Shadow;
+  onCommit: (shadow: Shadow | undefined) => void;
+}) {
+  return (
+    <Section
+      title="Shadow"
+      right={
+        <Toggle
+          pressed={Boolean(shadow)}
+          onPressedChange={(on) => onCommit(on ? { color: "#00000040", blur: 24, x: 0, y: 8 } : undefined)}
+          label={shadow ? "Remove the shadow" : "Add a shadow"}
+          className="h-6 px-2 text-[11px]"
+        >
+          {shadow ? "on" : "off"}
+        </Toggle>
+      }
+    >
+      {shadow ? (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <Field label="Colour">
+              <ColorField
+                value={shadow.color}
+                onCommit={(color) => onCommit({ ...shadow, color: color ?? "#00000040" })}
+                fallback="#000000"
+              />
+            </Field>
+          </div>
+          <Field label="Blur">
+            <NumberField value={shadow.blur} onCommit={(blur) => onCommit({ ...shadow, blur: blur ?? 0 })} />
+          </Field>
+          <Field label="Offset x">
+            <NumberField value={shadow.x} onCommit={(x) => onCommit({ ...shadow, x: x ?? 0 })} />
+          </Field>
+          <Field label="Offset y">
+            <NumberField value={shadow.y} onCommit={(y) => onCommit({ ...shadow, y: y ?? 0 })} />
+          </Field>
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
+/**
+ * Drag on the picture to crop it; drag inside the crop to move it.
  *
  * A crop is a property of the layer, not an edit to the file: the asset stays the
  * one thing every design references, the crop is reversible, and the document
@@ -760,13 +1036,17 @@ function CropBox({
   onChange,
 }: {
   src: string;
-  crop?: [number, number, number, number];
-  onChange: (crop: [number, number, number, number] | undefined) => void;
+  crop?: Crop;
+  onChange: (crop: Crop | undefined) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [drag, setDrag] = useState<
+    | { mode: "draw"; x0: number; y0: number; x1: number; y1: number }
+    | { mode: "pan"; rect: Crop; grabX: number; grabY: number }
+    | null
+  >(null);
 
-  const at = (e: React.MouseEvent) => {
+  const at = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
     return {
       x: Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1),
@@ -774,51 +1054,73 @@ function CropBox({
     };
   };
 
-  const live = drag
+  const clamp01 = (v: number, size: number) => Math.min(Math.max(v, 0), 1 - size);
+  const round = (c: Crop): Crop => c.map((v) => Number(v.toFixed(4))) as Crop;
+
+  const rect: Crop | null = drag
+    ? drag.mode === "pan"
+      ? drag.rect
+      : [
+          Math.min(drag.x0, drag.x1),
+          Math.min(drag.y0, drag.y1),
+          Math.abs(drag.x1 - drag.x0),
+          Math.abs(drag.y1 - drag.y0),
+        ]
+    : crop ?? null;
+
+  const live = rect
     ? {
-        left: `${Math.min(drag.x0, drag.x1) * 100}%`,
-        top: `${Math.min(drag.y0, drag.y1) * 100}%`,
-        width: `${Math.abs(drag.x1 - drag.x0) * 100}%`,
-        height: `${Math.abs(drag.y1 - drag.y0) * 100}%`,
+        left: `${rect[0] * 100}%`,
+        top: `${rect[1] * 100}%`,
+        width: `${rect[2] * 100}%`,
+        height: `${rect[3] * 100}%`,
       }
-    : crop
-      ? {
-          left: `${crop[0] * 100}%`,
-          top: `${crop[1] * 100}%`,
-          width: `${crop[2] * 100}%`,
-          height: `${crop[3] * 100}%`,
-        }
-      : null;
+    : null;
 
   return (
     <div className="flex flex-col gap-1.5">
       <div
         ref={ref}
-        className="checkerboard relative cursor-crosshair select-none overflow-hidden rounded-lg border border-neutral-200"
-        onMouseDown={(e) => {
+        className={cn(
+          "checkerboard relative select-none overflow-hidden rounded-lg border border-neutral-200",
+          drag?.mode === "pan" ? "cursor-grabbing" : "cursor-crosshair",
+        )}
+        onPointerDown={(e) => {
           const p = at(e);
-          setDrag({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+          e.currentTarget.setPointerCapture(e.pointerId);
+          // Inside the existing window, the gesture is "move this"; outside it, it
+          // is "draw a new one". Which one you meant is where you put the pointer.
+          if (crop && p.x >= crop[0] && p.x <= crop[0] + crop[2] && p.y >= crop[1] && p.y <= crop[1] + crop[3]) {
+            setDrag({ mode: "pan", rect: crop, grabX: p.x - crop[0], grabY: p.y - crop[1] });
+            return;
+          }
+          setDrag({ mode: "draw", x0: p.x, y0: p.y, x1: p.x, y1: p.y });
         }}
-        onMouseMove={(e) => {
+        onPointerMove={(e) => {
           if (!drag) return;
           const p = at(e);
+          if (drag.mode === "pan") {
+            const [, , w, h] = drag.rect;
+            setDrag({ ...drag, rect: [clamp01(p.x - drag.grabX, w), clamp01(p.y - drag.grabY, h), w, h] });
+            return;
+          }
           setDrag({ ...drag, x1: p.x, y1: p.y });
         }}
-        onMouseUp={() => {
+        onPointerUp={() => {
           if (!drag) return;
+          if (drag.mode === "pan") {
+            onChange(round(drag.rect));
+            setDrag(null);
+            return;
+          }
           const w = Math.abs(drag.x1 - drag.x0);
           const h = Math.abs(drag.y1 - drag.y0);
           setDrag(null);
           // A click rather than a drag: too small to be a crop anyone meant.
           if (w < 0.02 || h < 0.02) return;
-          onChange([
-            Number(Math.min(drag.x0, drag.x1).toFixed(4)),
-            Number(Math.min(drag.y0, drag.y1).toFixed(4)),
-            Number(w.toFixed(4)),
-            Number(h.toFixed(4)),
-          ]);
+          onChange(round([Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), w, h]));
         }}
-        onMouseLeave={() => setDrag(null)}
+        onPointerCancel={() => setDrag(null)}
       >
         <img src={src} alt="" draggable={false} className="block max-h-40 w-full object-contain" />
         {live ? (
@@ -838,17 +1140,14 @@ function CropBox({
               className="pointer-events-none absolute right-0 bg-neutral-900/50"
               style={{ top: live.top, height: live.height, left: `calc(${live.left} + ${live.width})` }}
             />
-            <div
-              className="pointer-events-none absolute border-2 border-white"
-              style={live}
-            />
+            <div className="pointer-events-none absolute border-2 border-white" style={live} />
           </>
         ) : null}
       </div>
       <div className="flex items-center gap-2 text-[11px] text-neutral-400">
         <span className="flex-1">
           {crop
-            ? `crop ${Math.round(crop[2] * 100)}% × ${Math.round(crop[3] * 100)}%`
+            ? `crop ${Math.round(crop[2] * 100)}% × ${Math.round(crop[3] * 100)}% — drag inside to move it`
             : "drag on the picture to crop"}
         </span>
         {crop ? (
@@ -876,94 +1175,222 @@ function ImageControls({
     enabled: picking,
   });
 
+  const crop = layer.crop as Crop | undefined;
+  const fit = (str(layer.fit) ?? "cover") as "cover" | "contain" | "stretch";
+  const focal = (Array.isArray(layer.focal) ? layer.focal : [0.5, 0.5]) as [number, number];
+  const color = (layer.color ?? {}) as {
+    brightness?: number; saturation?: number; hue?: number;
+    tint?: string; tintAmount?: number; grayscale?: boolean;
+  };
+  const patchColor = (patch: Record<string, unknown>) => {
+    const next = { ...color, ...patch };
+    // An empty grading block would render identically and read as a setting that
+    // is on, so it is removed rather than left behind as `{}`.
+    const meaningful = Object.entries(next).filter(([k, v]) => v !== undefined && !(k === "tintAmount" && !next.tint));
+    onPatch({ color: meaningful.length ? Object.fromEntries(meaningful) : undefined });
+  };
+
+  /**
+   * Zoom is the crop, read the other way round: a window half as wide is twice the
+   * magnification. Scaling about the window's centre means zooming does not also
+   * pan, so the two gestures stay separable.
+   */
+  const zoom = crop && crop[2] > 0 ? 1 / crop[2] : 1;
+  const setZoom = (z: number) => {
+    if (z <= 1.001) return onPatch({ crop: undefined });
+    const [x, y, w, h] = crop ?? [0, 0, 1, 1];
+    const nw = Math.min(1, 1 / z);
+    const nh = Math.min(1, w > 0 ? h * (nw / w) : nw);
+    const cx = x + w / 2, cy = y + h / 2;
+    onPatch({
+      crop: [
+        Number(Math.min(Math.max(cx - nw / 2, 0), 1 - nw).toFixed(4)),
+        Number(Math.min(Math.max(cy - nh / 2, 0), 1 - nh).toFixed(4)),
+        Number(nw.toFixed(4)),
+        Number(nh.toFixed(4)),
+      ],
+    });
+  };
+
   return (
-    <Field label="Image">
-      <div className="flex flex-col gap-2">
-        {typeof layer.src === "string" && layer.src ? (
-          <CropBox
-            src={layer.src}
-            crop={layer.crop as [number, number, number, number] | undefined}
-            onChange={(crop) => onPatch({ crop })}
-          />
-        ) : null}
+    <div className="flex flex-col gap-3">
+      <Field label="Image">
+        <div className="flex flex-col gap-2">
+          {typeof layer.src === "string" && layer.src ? (
+            <>
+              <CropBox src={layer.src} crop={crop} onChange={(c) => onPatch({ crop: c })} />
+              <Field label="Zoom">
+                <SliderField
+                  value={zoom}
+                  min={1}
+                  max={8}
+                  step={0.1}
+                  onCommit={setZoom}
+                  format={(v) => `${v.toFixed(1)}×`}
+                />
+              </Field>
+            </>
+          ) : null}
 
-        <div className="flex gap-1">
-          <label className="inline-flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-white text-xs hover:bg-neutral-100">
-            <Upload className="h-3.5 w-3.5" />
-            upload
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/avif"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                // Cleared first so choosing the same file twice fires again.
-                e.target.value = "";
-                try {
-                  onPatch({ src: (await uploadAsset(file)).url });
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Upload failed");
-                }
-              }}
-            />
-          </label>
-          <button
-            onClick={() => setPicking((v) => !v)}
-            className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-white text-xs hover:bg-neutral-100"
-          >
-            <Images className="h-3.5 w-3.5" />
-            gallery
-          </button>
-        </div>
-
-        {picking ? (
-          gallery.isPending ? (
-            <Spinner />
-          ) : (gallery.data?.items.length ?? 0) === 0 ? (
-            <p className="text-xs text-neutral-400">
-              Nothing uploaded yet — <Link to="/assets" className="underline">the gallery</Link> takes a drop.
-            </p>
-          ) : (
-            <div className="grid max-h-48 grid-cols-3 gap-1 overflow-y-auto">
-              {gallery.data!.items.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => {
-                    onPatch({ src: a.url });
-                    setPicking(false);
-                  }}
-                  title={a.name}
-                  className="checkerboard overflow-hidden rounded border border-neutral-200 hover:ring-2 hover:ring-neutral-400"
-                >
-                  <img src={a.url} alt={a.name} loading="lazy" className="aspect-square w-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )
-        ) : null}
-
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Fit">
-            <select
-              className="h-9 rounded-lg border border-neutral-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-neutral-400"
-              value={(layer.fit as string) ?? "cover"}
-              onChange={(e) => onPatch({ fit: e.target.value })}
+          <div className="flex gap-1">
+            <label className="inline-flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-white text-xs hover:bg-neutral-100">
+              <Upload className="h-3.5 w-3.5" />
+              upload
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/avif"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  // Cleared first so choosing the same file twice fires again.
+                  e.target.value = "";
+                  try {
+                    onPatch({ src: (await uploadAsset(file)).url });
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Upload failed");
+                  }
+                }}
+              />
+            </label>
+            <button
+              onClick={() => setPicking((v) => !v)}
+              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-white text-xs hover:bg-neutral-100"
             >
-              <option value="cover">cover</option>
-              <option value="contain">contain</option>
-              <option value="stretch">stretch</option>
-            </select>
+              <Images className="h-3.5 w-3.5" />
+              gallery
+            </button>
+          </div>
+
+          {picking ? (
+            gallery.isPending ? (
+              <Spinner />
+            ) : (gallery.data?.items.length ?? 0) === 0 ? (
+              <p className="text-xs text-neutral-400">
+                Nothing uploaded yet — <Link to="/assets" className="underline">the gallery</Link> takes a drop.
+              </p>
+            ) : (
+              <div className="grid max-h-48 grid-cols-3 gap-1 overflow-y-auto">
+                {gallery.data!.items.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => {
+                      onPatch({ src: a.url });
+                      setPicking(false);
+                    }}
+                    title={a.name}
+                    className="checkerboard overflow-hidden rounded border border-neutral-200 hover:ring-2 hover:ring-neutral-400"
+                  >
+                    <img src={a.url} alt={a.name} loading="lazy" className="aspect-square w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Fit">
+              <SelectField
+                value={fit}
+                onCommit={(v) => onPatch({ fit: v })}
+                options={[
+                  { value: "cover", label: "cover" },
+                  { value: "contain", label: "contain" },
+                  { value: "stretch", label: "stretch" },
+                ]}
+              />
+            </Field>
+            <Field label="Radius">
+              <NumberField value={num(layer.radius) ?? 0} onCommit={(radius) => onPatch({ radius: radius ?? 0 })} />
+            </Field>
+          </div>
+
+          {/* Only `cover` crops, and the focal point is what it keeps. */}
+          {fit === "cover" ? (
+            <Field label="Focal" hint="The part kept in frame when cover crops">
+              <Grid3
+                value={focal}
+                onCommit={(v) => onPatch({ focal: v })}
+                labels={(x, y) => `keep the ${y === 0 ? "top" : y === 1 ? "bottom" : "middle"} ${x === 0 ? "left" : x === 1 ? "right" : "centre"}`}
+              />
+            </Field>
+          ) : null}
+        </div>
+      </Field>
+
+      <Section
+        title="Colour"
+        right={
+          Object.keys(color).length ? (
+            <button
+              onClick={() => onPatch({ color: undefined })}
+              className="text-[11px] text-neutral-400 underline hover:text-neutral-900"
+            >
+              reset
+            </button>
+          ) : null
+        }
+      >
+        <Field label="Brightness">
+          <SliderField
+            value={color.brightness ?? 1}
+            min={0}
+            max={2}
+            step={0.05}
+            onCommit={(v) => patchColor({ brightness: v === 1 ? undefined : v })}
+            format={(v) => v.toFixed(2)}
+          />
+        </Field>
+        <Field label="Saturation">
+          <SliderField
+            value={color.saturation ?? 1}
+            min={0}
+            max={2}
+            step={0.05}
+            onCommit={(v) => patchColor({ saturation: v === 1 ? undefined : v })}
+            format={(v) => v.toFixed(2)}
+          />
+        </Field>
+        <Field label="Hue">
+          <SliderField
+            value={color.hue ?? 0}
+            min={-180}
+            max={180}
+            onCommit={(v) => patchColor({ hue: v === 0 ? undefined : v })}
+            format={(v) => `${v}°`}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Tint">
+            <ColorField
+              value={color.tint}
+              onCommit={(tint) => patchColor({ tint, tintAmount: tint ? color.tintAmount ?? 0.5 : undefined })}
+            />
           </Field>
-          <Field label="Radius">
-            <Input
-              type="number"
-              defaultValue={Number(layer.radius ?? 0)}
-              onBlur={(e) => onPatch({ radius: Number(e.target.value) })}
+          <Field label="Greyscale">
+            <Choice
+              value={color.grayscale ? "on" : "off"}
+              onCommit={(v) => patchColor({ grayscale: v === "on" ? true : undefined })}
+              options={[
+                { value: "off", label: "colour" },
+                { value: "on", label: "grey" },
+              ]}
             />
           </Field>
         </div>
-      </div>
-    </Field>
+        {color.tint ? (
+          <Field label="Tint amount">
+            <SliderField
+              value={color.tintAmount ?? 0.5}
+              min={0}
+              max={1}
+              step={0.05}
+              onCommit={(v) => patchColor({ tintAmount: v })}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+          </Field>
+        ) : null}
+      </Section>
+    </div>
   );
 }

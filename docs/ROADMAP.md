@@ -7,8 +7,19 @@ it is the handoff between sessions, not a wish list.
 
 - `packages/core` — the engine. Document schema (zod), rich-text runs with shared-scale
   auto-fit, per-line rounded highlight boxes, anchors and layer-relative frames, image
-  fit/cover/focal/colour grading, encoding to a file-size budget, the linter, the font
-  registry with licences, hosted background removal.
+  fit/cover/focal/crop/colour grading, rotation and mirroring about the layer centre,
+  encoding to a file-size budget, the linter, the font registry with licences, hosted
+  background removal.
+
+  Two things here are worth not undoing. **An image is clipped to its frame**: `cover`
+  scales by the larger ratio and is therefore always bigger than the box it fills, so
+  without the clip it painted over its neighbours while the linter — which reads the
+  frame — called the layout perfect. A shadowed image is painted to its own surface and
+  that surface casts, because a canvas shadow is drawn under the same clip as its shape:
+  cast it directly and either the shadow is clipped away or the pixels outside the frame
+  throw one. **Rotation is reported**: `LayerReport.bounds` is the axis-aligned area a
+  rotated layer occupies, present only when `rotate` is set, and `off-canvas` reads it —
+  a headline turned 20° leaves the canvas well before its frame does.
 - `apps/cli` — `creative`. init, render, inspect, lint, templates, describe, fill, batch,
   edit, font (add/list/set-license/remove/preview), rmbg, finish, color, export,
   login/logout/whoami (OAuth 2.0 + PKCE, loopback callback, `~/.creative/config.json`).
@@ -71,6 +82,23 @@ twenty at once) and the editor's image layer can upload or pick from it.
 
 Row actions are icons; right-click works on designs, projects, gallery images and
 layers, and every menu entry is reachable another way too.
+
+The middle column toggles between the render and the document as **editable JSON**,
+applied with ⌘↵ and refused with core's own zod error shown under the pane. That pane
+is the answer to the inspector always covering less of the schema than the schema has:
+a field that lands in core is editable in the web app the same day, without waiting for
+a control to be built for it. Anything the panel does not expose is reachable there.
+
+The inspector covers, per layer: rotate, flipX/flipY and opacity; frame anchor, inset,
+width, height and gap; a shadow that is all four fields or none. Text adds per-run
+tracking, case transform, italic and stroke beside the font, size and colour, plus line
+height, alignment, the box and the auto-fit bounds. Image adds a zoom slider over the
+crop, drag-inside-to-pan on the crop window, a 3×3 focal picker (shown only for `cover`,
+which is the only fit that crops), and the colour grading — brightness, saturation, hue,
+tint and greyscale — that core had all along with nothing in front of it.
+
+Every control writes a schema field directly; there is no view model in between, which
+is what keeps the web app and `creative render` agreeing about what a document means.
 
 Still open: run designs, and *adding* a layer from the UI — reordering, duplicating
 and deleting one are there, but a new layer still comes from the CLI or MCP.
