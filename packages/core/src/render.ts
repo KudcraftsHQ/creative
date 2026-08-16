@@ -143,13 +143,35 @@ function roundRect(ctx: SKRSContext2D, b: Box, r: number): void {
   else ctx.rect(b.x, b.y, b.w, b.h);
 }
 
+/**
+ * The axis-aligned area a rotated box occupies.
+ *
+ * Reported alongside the box because the box is where the layer was *placed* and
+ * this is where it ended up: rotate a headline and its corners leave the canvas
+ * long before its frame does. The linter reads this one, so its off-canvas verdict
+ * is about the pixels rather than the intent.
+ */
+export function rotatedBounds(box: Box, degrees: number): Box {
+  const r = (degrees * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(r)), sin = Math.abs(Math.sin(r));
+  const w = box.w * cos + box.h * sin;
+  const h = box.w * sin + box.h * cos;
+  return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+}
+
+/**
+ * Rotation and mirroring both happen about the layer's centre, so neither moves it:
+ * a flipped photograph stays in its frame, and the layers anchored to it do not
+ * shift because a mirror was turned on.
+ */
 function withTransform(ctx: SKRSContext2D, layer: Layer, box: Box, draw: () => void): void {
   ctx.save();
   ctx.globalAlpha = layer.opacity ?? 1;
-  if (layer.rotate) {
+  if (layer.rotate || layer.flipX || layer.flipY) {
     const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
     ctx.translate(cx, cy);
-    ctx.rotate((layer.rotate * Math.PI) / 180);
+    if (layer.rotate) ctx.rotate((layer.rotate * Math.PI) / 180);
+    if (layer.flipX || layer.flipY) ctx.scale(layer.flipX ? -1 : 1, layer.flipY ? -1 : 1);
     ctx.translate(-cx, -cy);
   }
   draw();
@@ -279,18 +301,25 @@ function sourceRect(
   return { x, y, w, h };
 }
 
-function paintImageLayer(
+/**
+ * Draw the image into its frame, and no further.
+ *
+ * `cover` scales by the larger of the two ratios, so it is *always* bigger than the
+ * frame it fills — that is what cover means. Without a clip the excess paints over
+ * whatever sits beside it, silently and invisibly to the linter, which checks the
+ * frame and finds it perfectly in bounds. The frame is the promise the document
+ * makes to every layer anchored to this one, so the paint is held to it whether or
+ * not the corners happen to be rounded.
+ */
+function drawImageInto(
   ctx: SKRSContext2D,
   layer: ImageLayer,
   box: Box,
   img: Awaited<ReturnType<typeof loadImage>>,
 ): void {
   ctx.save();
-  if (layer.radius > 0) {
-    roundRect(ctx, box, layer.radius);
-    ctx.clip();
-  }
-  setShadow(ctx, layer.shadow);
+  roundRect(ctx, box, layer.radius);
+  ctx.clip();
 
   // The crop is a window on the source, in its own pixels. Everything below works
   // against that window rather than the whole image, so `fit` and `focal` mean
@@ -310,8 +339,38 @@ function paintImageLayer(
     const y = layer.fit === "cover" ? box.y + (box.h - h) * fy : box.y + (box.h - h) / 2;
     ctx.drawImage(img, src.x, src.y, src.w, src.h, x, y, w, h);
   }
-  clearShadow(ctx);
   ctx.restore();
+}
+
+function paintImageLayer(
+  ctx: SKRSContext2D,
+  layer: ImageLayer,
+  box: Box,
+  img: Awaited<ReturnType<typeof loadImage>>,
+  scale: number,
+): void {
+  if (!layer.shadow) {
+    drawImageInto(ctx, layer, box, img);
+    return;
+  }
+
+  // A shadow has to be cast by what is actually painted. Setting one on the context
+  // and clipping would throw the clip away as well — a canvas shadow is drawn with
+  // the same clip as its shape — while not clipping would cast from the pixels
+  // outside the frame, which nobody can see. So the paint happens on its own
+  // surface, and that surface is what casts: a cut-out keeps its silhouette, a
+  // cover fill casts from its rounded frame, and neither leaks past the box.
+  const off = createCanvas(
+    Math.max(1, Math.round(box.w * scale)),
+    Math.max(1, Math.round(box.h * scale)),
+  );
+  const octx = off.getContext("2d");
+  octx.scale(scale, scale);
+  drawImageInto(octx, layer, { x: 0, y: 0, w: box.w, h: box.h }, img);
+
+  setShadow(ctx, layer.shadow);
+  ctx.drawImage(off, box.x, box.y, box.w, box.h);
+  clearShadow(ctx);
 }
 
 function paintRectLayer(ctx: SKRSContext2D, layer: RectLayer, box: Box): void {
@@ -326,6 +385,10 @@ function paintRectLayer(ctx: SKRSContext2D, layer: RectLayer, box: Box): void {
     ctx.stroke();
   }
 }
+
+/** Reported only when there is something to report — see `LayerReport.bounds`. */
+const bounds = (layer: Layer, box: Box): { bounds?: Box } =>
+  layer.rotate ? { bounds: rotatedBounds(box, layer.rotate) } : {};
 
 export async function render(doc: Document, opts: RenderOptions = {}): Promise<RenderResult> {
   const started = performance.now();
@@ -385,6 +448,7 @@ export async function render(doc: Document, opts: RenderOptions = {}): Promise<R
         id,
         type: "text",
         box,
+        ...bounds(layer, box),
         fontSize: layout.fontSize,
         lines: layout.lines.length,
         autofitScale: Number(layout.scale.toFixed(4)),
@@ -407,16 +471,16 @@ export async function render(doc: Document, opts: RenderOptions = {}): Promise<R
         w: avail.explicitW || !avail.explicitH ? avail.w : avail.h / aspect,
         h: avail.explicitH || !avail.explicitW ? avail.h : avail.w * aspect,
       }));
-      withTransform(ctx, layer, box, () => paintImageLayer(ctx, layer, box, img));
+      withTransform(ctx, layer, box, () => paintImageLayer(ctx, layer, box, img, scale));
       placed.set(id, box);
-      layers.push({ id, type: "image", box });
+      layers.push({ id, type: "image", box, ...bounds(layer, box) });
       continue;
     }
 
     const box = place(layer, canvasSize, placed, (avail) => ({ w: avail.w, h: avail.h }));
     withTransform(ctx, layer, box, () => paintRectLayer(ctx, layer, box));
     placed.set(id, box);
-    layers.push({ id, type: "rect", box });
+    layers.push({ id, type: "rect", box, ...bounds(layer, box) });
   }
 
   return {

@@ -26,6 +26,7 @@ const { fill, describe: describeTemplate, parseTemplate, MissingSlots } = await 
   parseTemplate: (await import("../src/document.ts")).parseTemplate,
 }));
 const { encode } = await import("../src/export.ts");
+const { lint } = await import("../src/lint.ts");
 const { installFromGoogle, installLocal, getFont } = await import("../src/fonts.ts");
 
 /**
@@ -285,5 +286,79 @@ describe("crop", () => {
     );
     expect(pixel(canvas, 100, 500)).toBe("255,0,0");
     expect(pixel(canvas, 900, 500)).toBe("0,0,255");
+  });
+
+  /**
+   * `cover` is defined as "bigger than the frame", so the overflow is not an edge
+   * case — it is every cover layer. It used to paint over the neighbours while the
+   * linter, which reads the frame, called the layout perfect.
+   */
+  test("cover is clipped to its frame, not painted past it", async () => {
+    const { canvas } = await render(
+      doc([{ type: "image", id: "p", src: photo, frame: { anchor: "top-left", inset: 0, w: 400, h: 400 } }]),
+    );
+    // 200×100 into 400×400 covers at 4×, so 800 wide: 200px would hang off each side.
+    expect(pixel(canvas, 100, 200)).toBe("255,0,0");
+    expect(pixel(canvas, 300, 200)).toBe("0,0,255");
+    expect(pixel(canvas, 500, 200)).toBe("255,255,255");
+  });
+});
+
+describe("rotate and flip", () => {
+  const photo = join(process.env.CREATIVE_HOME!, "flip.png");
+
+  beforeAll(() => {
+    const canvas = createCanvas(200, 100);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ff0000";
+    ctx.fillRect(0, 0, 100, 100);
+    ctx.fillStyle = "#0000ff";
+    ctx.fillRect(100, 0, 100, 100);
+    writeFileSync(photo, canvas.toBuffer("image/png"));
+  });
+
+  const pixel = (canvas: Canvas, x: number, y: number) => {
+    const [r, g, b] = canvas.getContext("2d").getImageData(x, y, 1, 1).data;
+    return `${r},${g},${b}`;
+  };
+
+  test("flipX mirrors about the centre without moving the layer", async () => {
+    const layer = { type: "image", id: "p", src: photo, frame: "full", fit: "stretch" };
+    const plain = await render(doc([layer]));
+    const flipped = await render(doc([{ ...layer, flipX: true }]));
+
+    expect(pixel(plain.canvas, 100, 500)).toBe("255,0,0");
+    expect(pixel(flipped.canvas, 100, 500)).toBe("0,0,255");
+    expect(pixel(flipped.canvas, 900, 500)).toBe("255,0,0");
+    // A mirror is not a move: everything anchored to this layer stays where it was.
+    expect(flipped.report.layers[0]!.box).toEqual(plain.report.layers[0]!.box);
+  });
+
+  test("a rotated layer reports the area it occupies, not the frame it was placed in", async () => {
+    const { report } = await render(
+      doc([{ type: "rect", id: "r", frame: { anchor: "center", w: 400, h: 400 }, fill: "#000", rotate: 45 }]),
+    );
+    const { box, bounds } = report.layers[0]!;
+    expect(box.w).toBe(400);
+    // 400 square turned 45° needs 400√2 ≈ 566 in both axes.
+    expect(Math.round(bounds!.w)).toBe(566);
+    expect(Math.round(bounds!.x)).toBe(217);
+  });
+
+  test("an unrotated layer reports no separate bounds", async () => {
+    const { report } = await render(
+      doc([{ type: "rect", id: "r", frame: { anchor: "center", w: 400, h: 400 }, fill: "#000" }]),
+    );
+    expect(report.layers[0]!.bounds).toBeUndefined();
+  });
+
+  test("lint calls a rotated layer off-canvas when its corners leave, though its frame does not", async () => {
+    const document = doc([
+      // 980×600 fits the canvas; turned 30° it needs 980cos30 + 600sin30 ≈ 1149.
+      { type: "rect", id: "r", frame: { anchor: "center", w: 980, h: 600 }, fill: "#000", rotate: 30 },
+    ]);
+    const { canvas, report } = await render(document);
+    const findings = lint({ doc: document, report, canvas });
+    expect(findings.some((f) => f.rule === "off-canvas" && f.layer === "r")).toBe(true);
   });
 });

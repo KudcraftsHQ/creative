@@ -48,6 +48,12 @@ Canva".
 each other (`below`, `gap`, `align`). A headline that grows by a line pushes the fine
 print down instead of colliding with it.
 
+**Transforms that do not move anything.** `rotate`, `flipX` and `flipY` turn about a
+layer's centre, so mirroring a photograph does not shift the caption anchored under it.
+An image is clipped to its frame — `cover` is by definition larger than the box it
+fills — and `inspect` reports the area a rotated layer actually occupies alongside the
+frame it was placed in, so the linter judges the pixels rather than the intent.
+
 **A feedback loop an agent can close.** `inspect` returns every layer's resolved box
 and chosen font size. `lint` returns defects — overflow, off-canvas, contrast sampled
 against the pixels actually behind the text, missing or personal-only fonts, safe-area

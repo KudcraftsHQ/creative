@@ -93,6 +93,8 @@ const LayerBase = {
   frame: FrameSpec.default({}),
   opacity: z.number().min(0).max(1).default(1),
   rotate: z.number().default(0).describe("degrees, clockwise, about the layer centre"),
+  flipX: z.boolean().default(false).describe("mirror horizontally, about the layer centre"),
+  flipY: z.boolean().default(false).describe("mirror vertically, about the layer centre"),
   hidden: z.boolean().default(false),
 };
 
@@ -213,6 +215,12 @@ export interface LayerReport {
   id: string;
   type: Layer["type"];
   box: Box;
+  /**
+   * The axis-aligned area the layer actually occupies once rotated. Present only
+   * when `rotate` is set — otherwise it is the box, and reporting it twice would
+   * invite a reader to wonder which of the two is the real one.
+   */
+  bounds?: Box;
   /** text only */
   fontSize?: number;
   lines?: number;

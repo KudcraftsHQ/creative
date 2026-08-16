@@ -117,15 +117,20 @@ export function lint({ doc, report, canvas, scale = 1 }: LintInput): Finding[] {
     const r = id ? byId.get(id) : undefined;
     if (!r) continue;
 
-    /* geometry */
-    const { x, y, w, h } = r.box;
+    /* geometry — against the area the layer occupies once rotated, not the frame it
+       was placed in. A headline turned 20° leaves the canvas well before its frame
+       does, and a linter that reads the frame calls that fine. */
+    const { x, y, w, h } = r.bounds ?? r.box;
     if (x < -0.5 || y < -0.5 || x + w > doc.canvas.w + 0.5 || y + h > doc.canvas.h + 0.5) {
       findings.push({
         rule: "off-canvas",
         severity: "error",
         layer: r.id,
-        message: `"${r.id}" extends outside the canvas (${Math.round(x)},${Math.round(y)} ${Math.round(w)}×${Math.round(h)} on ${doc.canvas.w}×${doc.canvas.h})`,
-        fix: "reduce its width, shorten the copy, or move it to an anchor with more room",
+        message: `"${r.id}" extends outside the canvas (${Math.round(x)},${Math.round(y)} ${Math.round(w)}×${Math.round(h)} on ${doc.canvas.w}×${doc.canvas.h})`
+          + (r.bounds ? `, once rotated by ${layer.rotate}°` : ""),
+        fix: r.bounds
+          ? "reduce its rotation or its width, or move it to an anchor with more room"
+          : "reduce its width, shorten the copy, or move it to an anchor with more room",
       });
     }
 
