@@ -64,6 +64,8 @@ export const Run = z.object({
   color: Color.default("#000000"),
   tracking: z.number().default(0).describe("letter-spacing, in px at size 100"),
   transform: z.enum(["none", "upper", "lower"]).default("none"),
+  italic: z.boolean().default(false)
+    .describe("slant the run; synthesised when the family has no italic face"),
   stroke: z.object({ color: Color, width: z.number() }).optional(),
 }).strict();
 export type Run = z.infer<typeof Run>;
@@ -105,6 +107,7 @@ export const TextLayer = z.object({
   color: Color.optional(),
   tracking: z.number().optional(),
   transform: z.enum(["none", "upper", "lower"]).optional(),
+  italic: z.boolean().optional(),
   align: z.enum(["left", "center", "right"]).default("left"),
   lineHeight: z.number().default(1.14),
   box: TextBox.default({}),
