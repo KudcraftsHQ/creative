@@ -20,16 +20,20 @@ it is the handoff between sessions, not a wish list.
 
 ## Not done
 
-### 1. The template-authoring loop (highest value)
+### 1. The template-authoring loop
 
-The point of `save_template` + `compare_images` is that **an agent authors templates from
-a reference image** rather than a human writing JSON: read the reference, propose a
-template, fill it, render, compare, patch, repeat until close enough. The tools exist;
-the loop has not been driven end to end and no prompt/skill wraps it.
+**This is not something the repository implements.** The loop belongs to whichever agent
+is driving the tools: it writes a template JSON, fills it, renders, *looks at* the
+returned image against the reference, and patches. That is a judgement the model makes
+by looking, and the platform's job is to hand it the pictures and get out of the way.
 
-Build it as a skill or an MCP prompt, and prove it by regenerating `spec-poster` from
-`docs/references/` without hand-editing JSON. Watch for: the model proposing absolute
-pixel frames instead of anchors (it will), and declaring `maxChars` it never checks.
+So do not build scoring, similarity metrics or a `verify_template` checker into core.
+`save_template`, `fill_template` and `compare_images` are the whole surface, and they
+already exist. If the loop turns out to be missing something, it will be a *capability*
+the agent cannot express (a layer type, a frame mode), not a measurement.
+
+What is genuinely open: driving the loop end to end once, to find those missing
+capabilities. Regenerating `spec-poster` from `docs/references/` is the exercise.
 
 ### 2. Background-removal provider survey
 
@@ -39,42 +43,71 @@ three over ~10 real product photographs — the black rubber parts on a dark han
 hard case — and record quality against price in `docs/bgremove-survey.md`. Then set a
 default.
 
-### 3. The web app — `creative.kudcrafts.com`
+### 3. The web app — `creative.kudcrafts.com` (built, deploying)
 
-Copy tempe-sadari's shape exactly; it is already what we want.
+`apps/api` and `apps/web` exist and are in tempe-sadari's shape. What is done:
 
-- `apps/api` — Hono 4 + Prisma 5 + better-auth + zod, `bun --hot` in dev. Must also be
-  the OAuth server the CLI's `creative login` talks to: `/oauth/authorize`,
-  `/oauth/token`, authorization code + PKCE, client id `creative-cli`, loopback redirect.
-  See `apps/cli/src/auth.ts` for exactly what it expects.
-- `apps/web` — Vite + React 18 + TanStack Query + Radix/shadcn + Tailwind + react-router.
-- Live preview over SSE: `streamSSE` from `hono/streaming`, singleton `EventSource`
-  pinned on `window` so HMR does not orphan it, `ping` events as keepalive. A document
-  write from any source — terminal, agent, batch — re-renders and pushes to open tabs.
-- Screens: a library (search across the copy in every design, projects as folders, a
-  top-down scrollable grid) and an editor (layer list, preview, right-hand inspector,
-  lint panel). ASCII mockups of both are in the plan at
-  https://notes.kudcrafts.com/d/headless-canva-plan — follow them.
-- **No free-drag canvas.** Position comes from anchors; dragging to an absolute pixel
-  breaks the property that makes the next hundred renders work. The inspector edits the
-  same JSON the CLI writes.
-- Search is the differentiator and is nearly free: a design is JSON, so every word of
-  copy is a Postgres full-text column.
+- `apps/api` — Hono 4 + Prisma 5 + better-auth + zod. Routes: `health`, `me`, `designs`
+  (CRUD, `/render`, `/lint`), `projects`, `templates`, `fonts`, `events`.
+- The OAuth server the CLI talks to — `/oauth/authorize` (server-rendered consent),
+  `/oauth/token`, PKCE S256, loopback-only redirects, single-use codes that revoke the
+  whole grant on replay, tokens stored as SHA-256 hashes, rotating refresh.
+  Verified end to end against the real `creative login`.
+- `apps/web` — Vite + React 18 + TanStack Query + Radix + Tailwind + react-router.
+  Library (search over the copy in every design, projects as folders, grid) and editor
+  (layer list, preview, inspector, lint panel).
+- Live preview over SSE: `streamSSE`, a singleton `EventSource` pinned on `window`, and
+  `ping` keepalive. **The hub is Redis pub/sub**, per the mark on the plan — web and
+  worker are separate containers, so an in-process emitter could not reach across them.
+- **No free-drag canvas.** The inspector edits anchors, and writes the same JSON the CLI
+  writes.
 
-### 4. Deployment
+Not done: the ASCII mockups in the plan at
+https://notes.kudcrafts.com/d/headless-canva-plan could not be read back (that page is
+client-rendered and `readback pull` returns only marks), so both screens were built from
+the description above — worth a look against the mockups. Also open: run designs, an
+upload route for image assets, and project rename/delete in the UI.
 
-- One multi-stage Dockerfile, tempe-sadari's shape: install → builder (prisma generate,
-  vite build, bun build) → slim runner; API serves the built SPA; `prisma migrate deploy`
-  on start. Bake the fonts into the runner layer so renders are reproducible.
-- Two Coolify applications from that one image, different start commands: the web app,
-  and a worker with no domain for renders and background removal.
-- Database `creative-db` on the shared Coolify `postgresql` instance (uuid `n4okooo`).
-  The `pgbouncer-shared` service is wildcard + `auth_query`, so it needs **no new
-  PgBouncer config** — unlike the older per-app poolers, whose stack currently reports
-  `degraded:unhealthy`.
+### 4. Deployment (live, from the branch)
+
+Both applications are deployed on Coolify project `creative`
+(`pwwtclouploljs7tlj8zl4qw`) on `vienna-1`, built from **branch `creative-web`** —
+not `main`, because the PR is unmerged and awaiting sign-off. Repoint both to `main`
+when it lands.
+
+| | uuid | notes |
+|---|---|---|
+| `creative-web` | `wnejx0ww0qxdpc81s4zxgner` | `http://creative.kudcrafts.com`, healthcheck `/api/health` |
+| `creative-worker` | `a68wlhrc1i5ye9yjozfevuau` | no domain, `bun apps/api/src/worker.ts` |
+
+Three things cost a deployment each and are worth not rediscovering:
+
+- **Bun puts a workspace's dependencies in that workspace's own `node_modules`** and
+  keeps the shared store at the root. A build stage copying only the apps' trees leaves
+  core unable to resolve `zod`. `@napi-rs/canvas` is a direct dependency of the API for
+  the same reason — the bundle keeps it external and resolution never reaches core's tree.
+- **`bun:1-slim` has neither `curl` nor `wget`**, and Coolify's healthcheck runs one
+  inside the container. Without it a perfectly healthy deployment rolls back.
+- **The fqdn is `http://`, not `https://`.** Cloudflare terminates TLS and talks to the
+  origin over HTTP; an `https://` fqdn makes Coolify force a redirect the origin then
+  serves again, forever. Every other `*.kudcrafts.com` app is configured the same way.
+
+Redis is `redis-secondary` database 5; the channel is `creative:events`.
+
+#### Still to do here
+
+- `Dockerfile` — multi-stage, tempe-sadari's shape: install → builder (prisma generate,
+  vite build, bun build) → slim runner. Fonts (Anton, Archivo Black, Inter) are installed
+  at build time into `CREATIVE_HOME=/app/.creative` and baked in, so a render is
+  reproducible from the image alone. `prisma migrate deploy` runs on start of the web app
+  only, so the worker cannot race it.
+- Database `creative-db` created on the shared `postgresql` instance (uuid `n4okooo`) and
+  migrated. `pgbouncer-shared` is wildcard + `auth_query`, so it needed no new config.
 - Prisma through the pooler needs `?pgbouncer=true&connection_limit=1` on `DATABASE_URL`
   and a `DIRECT_URL` that bypasses it for migrations.
-- Assets in S3 via `@aws-sdk/client-s3` with presigned URLs, as tempe-sadari does.
+- Assets in S3 via `@aws-sdk/client-s3` with presigned URLs. `src/lib/storage.ts` is
+  written but **no bucket is configured yet**: previews fall back to on-demand rendering,
+  and the worker idles until S3 env is set.
 
 ### 5. Smaller things
 

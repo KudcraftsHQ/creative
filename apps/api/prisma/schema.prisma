@@ -1,0 +1,174 @@
+// The shared library.
+//
+// A design is a JSON document — the same shape the CLI writes and the renderer
+// reads — so this schema stores the document verbatim and derives everything else
+// from it. `searchText` is the one derived column: every word of copy in the
+// document, flattened on write, which is what makes "find the listing that says
+// GROSIR" a query rather than a crawl.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Migrations cannot run through PgBouncer's transaction pooling — they need a
+  // session. DIRECT_URL bypasses the pooler for exactly that.
+  directUrl = env("DIRECT_URL")
+}
+
+// ── better-auth ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  projects      Project[]
+  designs       Design[]
+  oauthCodes    OAuthCode[]
+  oauthTokens   OAuthToken[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// ── the library ─────────────────────────────────────────────────────────────
+
+/// A folder. Projects exist so a hundred listings for one shop stay together.
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  designs   Design[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId])
+  @@map("project")
+}
+
+model Design {
+  id         String   @id @default(cuid())
+  name       String
+  /// The document, exactly as the CLI writes it. The source of truth.
+  document   Json
+  /// Every word of copy in the document, flattened on write. Derived, never authored.
+  searchText String   @default("")
+  width      Int
+  height     Int
+  /// Object key of the last render, if one has been stored.
+  previewKey String?
+  /// Bumped on every write; the SSE payload carries it so a tab can ignore
+  /// an event describing a version it already has.
+  version    Int      @default(1)
+
+  projectId  String?
+  ownerId    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, updatedAt])
+  @@index([projectId])
+  @@map("design")
+}
+
+// ── the OAuth server the CLI talks to ───────────────────────────────────────
+
+/// A short-lived authorization code, bound to the PKCE challenge that requested it.
+model OAuthCode {
+  code                String   @id
+  clientId            String
+  userId              String
+  redirectUri         String
+  codeChallenge       String
+  codeChallengeMethod String
+  scope               String
+  expiresAt           DateTime
+  /// Codes are single-use: a replay must fail even inside the expiry window.
+  consumedAt          DateTime?
+  createdAt           DateTime @default(now())
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("oauth_code")
+}
+
+/// Issued tokens, stored as SHA-256 hashes — a leaked database row must not be
+/// usable as a credential.
+model OAuthToken {
+  id               String    @id @default(cuid())
+  accessTokenHash  String    @unique
+  refreshTokenHash String?   @unique
+  clientId         String
+  userId           String
+  scope            String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("oauth_token")
+}

@@ -1,0 +1,1 @@
+{"root":["./src/main.tsx","./src/components/ui.tsx","./src/lib/api.ts","./src/lib/auth-client.ts","./src/lib/cn.ts","./src/lib/events.ts","./src/lib/use-live.ts","./src/lib/use-mount-effect.ts","./src/routes/Editor.tsx","./src/routes/Library.tsx","./src/routes/Login.tsx","./vite.config.ts"],"version":"5.9.3"}

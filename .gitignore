@@ -7,3 +7,5 @@ out/
 .env.*
 !.env.example
 /tmp/
+.conductor-context.md
+.conductor-t3-thread

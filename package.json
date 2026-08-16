@@ -6,6 +6,13 @@
   "scripts": {
     "cli": "bun run apps/cli/src/index.ts",
     "build:cli": "bun build apps/cli/src/index.ts --compile --outfile dist/creative",
+    "dev": "bun run --filter '@creative/api' --filter '@creative/web' --parallel dev",
+    "dev:api": "bun --filter @creative/api dev",
+    "dev:web": "bun --filter @creative/web dev",
+    "build": "bun --filter @creative/web build && bun --filter @creative/api build",
+    "db:generate": "bun --filter @creative/api db:generate",
+    "db:migrate": "bun --filter @creative/api db:migrate",
+    "db:deploy": "bun --filter @creative/api db:deploy",
     "typecheck": "bun --filter '*' typecheck",
     "test": "bun test"
   },
