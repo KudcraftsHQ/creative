@@ -352,10 +352,30 @@ describe("rotate and flip", () => {
     expect(report.layers[0]!.bounds).toBeUndefined();
   });
 
+  test("a full-bleed picture turned a few degrees is bleed, not a defect", async () => {
+    const document = doc([
+      { type: "image", id: "bg", src: photo, frame: "full", fit: "cover", rotate: 4 },
+    ]);
+    const { canvas, report } = await render(document);
+    expect(report.layers[0]!.bounds!.w).toBeGreaterThan(1000);
+    expect(lint({ doc: document, report, canvas }).some((f) => f.rule === "off-canvas")).toBe(false);
+  });
+
+  test("text is never bleed, however much of the canvas it covers", async () => {
+    const document = doc([
+      { type: "text", id: "huge", text: "WIDE", font: "Anton", size: 400, color: "#000",
+        frame: { anchor: "center", w: 2000, h: 2000 } },
+    ]);
+    const { canvas, report } = await render(document);
+    expect(lint({ doc: document, report, canvas }).some((f) => f.rule === "off-canvas")).toBe(true);
+  });
+
   test("lint calls a rotated layer off-canvas when its corners leave, though its frame does not", async () => {
     const document = doc([
-      // 980×600 fits the canvas; turned 30° it needs 980cos30 + 600sin30 ≈ 1149.
-      { type: "rect", id: "r", frame: { anchor: "center", w: 980, h: 600 }, fill: "#000", rotate: 30 },
+      // 990×400 fits the canvas; turned 30° it needs 990cos30 + 400sin30 ≈ 1057 across,
+      // while standing only 841 tall — so it leaves the canvas without covering it,
+      // which is a defect rather than bleed.
+      { type: "rect", id: "r", frame: { anchor: "center", w: 990, h: 400 }, fill: "#000", rotate: 30 },
     ]);
     const { canvas, report } = await render(document);
     const findings = lint({ doc: document, report, canvas });

@@ -121,7 +121,21 @@ export function lint({ doc, report, canvas, scale = 1 }: LintInput): Finding[] {
        was placed in. A headline turned 20° leaves the canvas well before its frame
        does, and a linter that reads the frame calls that fine. */
     const { x, y, w, h } = r.bounds ?? r.box;
-    if (x < -0.5 || y < -0.5 || x + w > doc.canvas.w + 0.5 || y + h > doc.canvas.h + 0.5) {
+
+    /**
+     * A picture or a block that covers the whole canvas is bleeding off it on
+     * purpose — a background photograph turned a few degrees, a colour field run
+     * past the edge so no white line shows at the corner. Nothing is lost, so
+     * there is nothing to report.
+     *
+     * Text is never bleed. A headline wider than the canvas has lost its ends,
+     * which is exactly the defect this rule exists to catch.
+     */
+    const bleed = layer.type !== "text"
+      && x <= 0.5 && y <= 0.5
+      && x + w >= doc.canvas.w - 0.5 && y + h >= doc.canvas.h - 0.5;
+
+    if (!bleed && (x < -0.5 || y < -0.5 || x + w > doc.canvas.w + 0.5 || y + h > doc.canvas.h + 0.5)) {
       findings.push({
         rule: "off-canvas",
         severity: "error",

@@ -7,13 +7,13 @@
  * cover less of the schema than the schema has, because fields land in core first, so
  * the literal document is always one click away and always editable.
  *
- * There is no free-drag canvas, and that is a decision rather than a gap. Position
- * comes from anchors and from other layers, so a headline that grows by a line pushes
- * the fine print down instead of colliding with it. Dragging to an absolute pixel
- * throws that away and breaks the next hundred renders — so the inspector edits the
- * same anchors the CLI writes, and the preview is the rendered image rather than a
- * browser's approximation of one. What *is* draggable is what has nothing to be
- * relative to: the crop window on a photograph.
+ * Layers are selected and dragged on the render itself, but what a drag *writes* is
+ * an anchor — see `components/stage.tsx`. Position comes from anchors and from other
+ * layers, so a headline that grows by a line pushes the fine print down instead of
+ * colliding with it; dragging to an absolute pixel would throw that away and break
+ * the next hundred renders. So the gesture is direct and the document stays relative,
+ * and the preview remains the rendered image rather than a browser's approximation
+ * of one.
  *
  * The right panel is a runs table because a text layer is a list of styled spans,
  * not a string: the 3× ratio between the price and the words around it is the
@@ -44,6 +44,7 @@ import {
 import { useLiveLibrary } from "@/lib/use-live.ts";
 import { Button, Spinner } from "@/components/ui.tsx";
 import { JsonPane } from "@/components/json-pane.tsx";
+import { Stage } from "@/components/stage.tsx";
 import {
   Choice, ColorField, Field, Grid3, NumberField, Section, SelectField,
   SliderField, TextField, Toggle,
@@ -451,14 +452,19 @@ export function Editor() {
         {/* the document — drawn, or spelled out */}
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 overflow-auto bg-neutral-100 p-6">
           {view === "preview" ? (
-            <div className="checkerboard max-h-full overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
-              <img
-                key={design.data.version}
-                src={renderUrl(design.data.id, design.data.version, 900)}
-                alt={design.data.name}
-                className="block max-h-[calc(100vh-10rem)] w-auto"
-              />
-            </div>
+            <Stage
+              src={renderUrl(design.data.id, design.data.version, 900)}
+              alt={design.data.name}
+              canvas={doc.canvas}
+              reports={lint.data?.layers ?? []}
+              selected={selected}
+              onSelect={setSelected}
+              layerIdAt={(lid) => layers.find((l, i) => layerId(l, i) === lid)}
+              onPatch={(lid, patch) => {
+                const i = layers.findIndex((l, j) => layerId(l, j) === lid);
+                if (i >= 0) patchLayer(i, patch);
+              }}
+            />
           ) : (
             // Keyed on the version so a write from a terminal replaces the text
             // rather than leaving an edit in progress against a document that has
@@ -497,8 +503,9 @@ export function Editor() {
             />
           ) : (
             <p className="px-1 py-6 text-sm text-neutral-400">
-              Pick a layer to edit it. Position comes from anchors, not from dragging — a headline that
-              grows by a line pushes what follows down instead of colliding with it.
+              Pick a layer — on the render or in the list — to edit it. Dragging writes anchors rather
+              than pixels, so a headline that grows by a line still pushes what follows down instead of
+              colliding with it.
             </p>
           )}
         </aside>
