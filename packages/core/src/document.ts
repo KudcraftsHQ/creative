@@ -9,23 +9,40 @@ import { Document, Template } from "./types.ts";
 import type { Document as Doc, Template as Tpl } from "./types.ts";
 import { z } from "zod";
 
-function explain(err: z.ZodError, what: string): Error {
+function explain(err: z.ZodError, what: string, value?: unknown): Error {
   const lines = err.issues.map((i) => {
     const path = i.path.length ? i.path.join(".") : "(root)";
     return `  ${path}: ${i.message}`;
   });
-  return new Error(`${what} is not valid:\n${lines.join("\n")}`);
+
+  // Confusing a template for a document is the single most common mistake, for
+  // people and models alike, and the raw schema error does not say so.
+  const hint = mistakenIdentity(what, value);
+  return new Error(`${what} is not valid:\n${lines.join("\n")}${hint ? `\n\n${hint}` : ""}`);
+}
+
+function mistakenIdentity(what: string, value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const keys = new Set(Object.keys(value));
+  if (what === "document" && keys.has("document") && keys.has("slots")) {
+    return "This looks like a template, not a document. Use `creative describe` / `creative fill` for templates, " +
+      "or pass `.document` if you meant the document inside it.";
+  }
+  if (what === "template" && keys.has("canvas") && keys.has("layers")) {
+    return "This looks like a document, not a template. A template wraps one: { name, slots, document }.";
+  }
+  return null;
 }
 
 export function parseDocument(value: unknown): Doc {
   const r = Document.safeParse(value);
-  if (!r.success) throw explain(r.error, "document");
+  if (!r.success) throw explain(r.error, "document", value);
   return r.data;
 }
 
 export function parseTemplate(value: unknown): Tpl {
   const r = Template.safeParse(value);
-  if (!r.success) throw explain(r.error, "template");
+  if (!r.success) throw explain(r.error, "template", value);
   return r.data;
 }
 
