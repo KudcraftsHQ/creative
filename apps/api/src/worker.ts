@@ -10,11 +10,12 @@
  * and idles rather than rendering into a void. The library falls back to
  * rendering previews on demand, which is slower and correct.
  */
-import { encode, parseDocument, registerAll, render, type Document } from "@creative/core";
+import { encode, registerAll } from "@creative/core";
 import { prisma } from "./lib/prisma.ts";
 import { publish, subscribe } from "./lib/events.ts";
 import { redisEnabled, sub } from "./lib/redis.ts";
 import { put, storageEnabled } from "./lib/storage.ts";
+import { renderStored } from "./services/render.ts";
 
 const THUMB_WIDTH = 640;
 
@@ -23,8 +24,7 @@ async function renderPreview(designId: string, ownerId: string): Promise<void> {
   if (!design) return;
 
   try {
-    const doc = parseDocument(design.document) as Document;
-    const { canvas } = await render(doc);
+    const { canvas } = await renderStored(design.document);
     const out = await encode(canvas, { format: "jpg", quality: 82, width: THUMB_WIDTH });
 
     const key = `previews/${design.ownerId}/${design.id}-${design.version}.jpg`;

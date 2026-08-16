@@ -12,15 +12,18 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, AlertTriangle, Info, Type, Image as ImageIcon, Square, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Info, Type, Image as ImageIcon, Square, Eye, EyeOff, Upload } from "lucide-react";
+import { toast } from "sonner";
 import {
   api,
   renderUrl,
+  uploadAsset,
   type CreativeDocument,
   type Design,
   type DocumentLayer,
   type Finding,
   type LayerReport,
+  type Project,
 } from "@/lib/api.ts";
 import { useLiveLibrary } from "@/lib/use-live.ts";
 import { Button, Input, Spinner } from "@/components/ui.tsx";
@@ -68,6 +71,20 @@ export function Editor() {
   const rename = useMutation({
     mutationFn: (name: string) => api.patch<Design>(`/api/designs/${id}`, { name }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["design", id] }),
+  });
+
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.get<{ items: Project[] }>("/api/projects"),
+  });
+
+  const moveToProject = useMutation({
+    mutationFn: (projectId: string | null) => api.patch<Design>(`/api/designs/${id}`, { projectId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["design", id] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["designs"] });
+    },
   });
 
   if (design.isPending) {
@@ -119,6 +136,19 @@ export function Editor() {
             if (value && value !== design.data!.name) rename.mutate(value);
           }}
         />
+        <select
+          className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-600 outline-none focus:ring-2 focus:ring-neutral-400"
+          value={design.data.projectId ?? ""}
+          onChange={(e) => moveToProject.mutate(e.target.value || null)}
+          aria-label="Project"
+        >
+          <option value="">No project</option>
+          {(projects.data?.items ?? []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
         <span className="text-xs text-neutral-400">
           {doc.canvas.w}×{doc.canvas.h}
         </span>
@@ -266,6 +296,39 @@ function Inspector({
           {layer.hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </Button>
       </div>
+
+      {layer.type === "image" ? (
+        <Field label="Image">
+          <div className="flex flex-col gap-2">
+            {typeof layer.src === "string" && layer.src ? (
+              <div className="checkerboard overflow-hidden rounded-lg border border-neutral-200">
+                <img src={layer.src} alt="" className="block max-h-32 w-full object-contain" />
+              </div>
+            ) : null}
+            <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white text-sm hover:bg-neutral-100">
+              <Upload className="h-4 w-4" />
+              Replace
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/avif"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  // Cleared straight away so choosing the same file twice fires again.
+                  e.target.value = "";
+                  try {
+                    const asset = await uploadAsset(file);
+                    onPatch({ src: asset.url });
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Upload failed");
+                  }
+                }}
+              />
+            </label>
+          </div>
+        </Field>
+      ) : null}
 
       {layer.type === "text" && layer.text !== undefined ? (
         <Field label="Copy">

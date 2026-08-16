@@ -113,6 +113,38 @@ export interface DocumentLayer {
   [key: string]: unknown;
 }
 
+export interface Asset {
+  id: string;
+  name: string;
+  mimeType: string;
+  bytes: number;
+  createdAt: string;
+  url: string;
+}
+
+/**
+ * Upload an image.
+ *
+ * Not through `api.post`: a multipart body must not carry a JSON content-type, and
+ * the browser has to set its own boundary.
+ */
+export async function uploadAsset(file: File): Promise<Asset> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch("/api/assets", { method: "POST", credentials: "include", body });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const err = (await res.json()) as { error?: string };
+      if (err.error) message = err.error;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return (await res.json()) as Asset;
+}
+
 /** The preview URL for a design at a version. The version is what busts the cache. */
 export const renderUrl = (id: string, version: number, width?: number) =>
   `/api/designs/${id}/render?format=jpg${width ? `&width=${width}` : ""}&v=${version}`;
