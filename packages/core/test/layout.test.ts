@@ -7,9 +7,14 @@
  * budget actually being met.
  */
 import { describe, expect, test, beforeAll } from "bun:test";
-import { mkdtempSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+
+// The registry this machine already has, captured before the suite points
+// CREATIVE_HOME somewhere disposable. `beforeAll` borrows the face from here
+// rather than downloading one — see the comment there.
+const realHome = process.env.CREATIVE_HOME ?? join(homedir(), ".creative");
 
 process.env.CREATIVE_HOME = mkdtempSync(join(tmpdir(), "creative-test-"));
 
@@ -20,11 +25,34 @@ const { fill, describe: describeTemplate, parseTemplate, MissingSlots } = await 
   parseTemplate: (await import("../src/document.ts")).parseTemplate,
 }));
 const { encode } = await import("../src/export.ts");
-const { installFromGoogle, getFont } = await import("../src/fonts.ts");
+const { installFromGoogle, installLocal, getFont } = await import("../src/fonts.ts");
 
-/** The whole suite needs one real face; Skia substitutes silently without it. */
+/**
+ * The whole suite needs one real face; Skia substitutes silently without it.
+ *
+ * Borrowed from the machine's own registry when it has one, and only downloaded
+ * otherwise. Fetching on every run made the suite depend on an anonymous GitHub
+ * rate limit — sixty requests an hour shared with everything else on the host —
+ * so a green suite turned red because of something no test touched.
+ */
 beforeAll(async () => {
-  if (!getFont("Anton")) await installFromGoogle("Anton");
+  if (getFont("Anton")) return;
+
+  const index = join(realHome, "fonts.json");
+  if (existsSync(index)) {
+    try {
+      const entry = (JSON.parse(readFileSync(index, "utf8")) as Record<string, { files: { path: string }[] }>).anton;
+      const file = entry?.files.find((f) => existsSync(f.path));
+      if (file) {
+        installLocal(file.path, { family: "Anton", license: "OFL", source: "borrowed from the local registry for tests" });
+        return;
+      }
+    } catch {
+      /* a malformed registry is not a reason to fail; fall through and fetch */
+    }
+  }
+
+  await installFromGoogle("Anton");
 }, 60_000);
 
 const doc = (layers: unknown[], canvas = { w: 1000, h: 1000 }) =>
