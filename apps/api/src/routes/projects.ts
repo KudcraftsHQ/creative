@@ -21,8 +21,15 @@ export const projectsRoute = new Hono()
         _count: { select: { designs: true } },
       },
     });
+    // Flattened rather than spread-with-undefined: the count is the only thing
+    // the UI wants from the relation, and `_count: undefined` still serialises.
     return c.json({
-      items: projects.map((p) => ({ ...p, designs: p._count.designs, _count: undefined })),
+      items: projects.map((p: (typeof projects)[number]) => ({
+        id: p.id,
+        name: p.name,
+        updatedAt: p.updatedAt,
+        designs: p._count.designs,
+      })),
     });
   })
 

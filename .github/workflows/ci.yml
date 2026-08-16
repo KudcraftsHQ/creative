@@ -17,14 +17,25 @@ jobs:
       - run: bun install --frozen-lockfile
 
       # The suite installs Anton from Google Fonts on first run; cache it so CI is
-      # not hitting the same three files on every push.
+      # not hitting the same three files on every push. The whole directory, not
+      # just fonts/ — without fonts.json the registry looks empty and the download
+      # happens anyway, which is the cache never having worked.
       - uses: actions/cache@v4
         with:
-          path: ~/.creative/fonts
-          key: creative-fonts-v1
+          path: ~/.creative
+          key: creative-fonts-v2
+
+      # The API's types come from the generated Prisma client, so typecheck cannot
+      # run before this. Locally the client is already there and the failure only
+      # shows up here.
+      - run: bun --filter @creative/api db:generate
 
       - run: bun test
       - run: bun run typecheck
+
+      # Both applications are built from this repository, and a broken build is
+      # only discovered at deploy time otherwise.
+      - run: bun run build
 
       # A compile failure here is a release failure later, and this is the cheap
       # place to find out.

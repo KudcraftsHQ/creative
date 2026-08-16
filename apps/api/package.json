@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "worker": "bun run src/worker.ts"
+    "worker": "bun run src/worker.ts",
+    "user:upsert": "bun run scripts/upsert-user.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.0",
