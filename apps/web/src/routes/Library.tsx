@@ -14,7 +14,10 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, Plus, Folder, LayoutGrid, X, ChevronRight, ChevronDown, Images } from "lucide-react";
+import {
+  Search, Plus, Folder, LayoutGrid, ChevronRight, ChevronDown, Images,
+  ExternalLink, Copy, Download, Trash2, Pencil, FolderInput, FolderOpen,
+} from "lucide-react";
 import {
   api,
   renderUrl,
@@ -25,6 +28,11 @@ import {
 } from "@/lib/api.ts";
 import { useLiveLibrary } from "@/lib/use-live.ts";
 import { Button, Input, Spinner, Empty } from "@/components/ui.tsx";
+import {
+  IconButton, TooltipProvider,
+  ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem,
+  ContextMenuSeparator, ContextMenuSubMenu, ContextMenuLabel,
+} from "@/components/menu.tsx";
 import { cn } from "@/lib/cn.ts";
 
 const BLANK = {
@@ -59,6 +67,22 @@ function ago(iso: string): string {
   if (days < 2) return "yesterday";
   if (days < 30) return `${Math.round(days)}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * Download a render.
+ *
+ * An anchor with `download` cannot name the file when the response is a
+ * cross-checked stream, and the menu has no anchor to hang it on at all — so both
+ * routes go through one function that builds the link and clicks it.
+ */
+function download(id: string, name: string, format: "png" | "jpg") {
+  const a = document.createElement("a");
+  a.href = `/api/designs/${id}/render?format=${format}`;
+  a.download = `${name}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 /** The first line of copy, which is what a person recognises a design by. */
@@ -135,6 +159,35 @@ export function Library() {
     },
   });
 
+  const renameDesign = useMutation({
+    mutationFn: (v: { id: string; name: string }) => api.patch(`/api/designs/${v.id}`, { name: v.name }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["designs"] }),
+  });
+
+  const moveDesign = useMutation({
+    mutationFn: (v: { id: string; projectId: string | null }) =>
+      api.patch(`/api/designs/${v.id}`, { projectId: v.projectId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["designs"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+
+  const removeDesign = useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/designs/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["designs"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not delete"),
+  });
+
+  const renameProject = useMutation({
+    mutationFn: (v: { id: string; name: string }) => api.patch(`/api/projects/${v.id}`, { name: v.name }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not rename"),
+  });
+
   const items = [...(designs.data?.items ?? [])].sort((a, b) => {
     if (sort === "name") return a.name.localeCompare(b.name);
     const d = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
@@ -145,6 +198,7 @@ export function Library() {
     projects.data?.items.find((p) => p.id === id)?.name ?? null;
 
   return (
+    <TooltipProvider>
     <div className="flex h-screen flex-col">
       {/* ┌ creative ─────────── ⌕ search ──────── [ + New design ] ┐ */}
       <header className="flex h-14 shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4">
@@ -177,23 +231,47 @@ export function Library() {
             label="All designs"
           />
           {(projects.data?.items ?? []).map((p) => (
-            <SideRow
-              key={p.id}
-              active={projectId === p.id}
-              onClick={() => setProjectId(p.id)}
-              onToggle={() => setOpenProjects((s) => ({ ...s, [p.id]: !s[p.id] }))}
-              expanded={openProjects[p.id] ?? false}
-              icon={<Folder className="h-3.5 w-3.5" />}
-              label={p.name}
-              count={p.designs}
-              onDelete={() => {
-                // The designs inside survive — the API detaches rather than
-                // cascades, so deleting a folder cannot lose work.
-                if (!confirm(`Delete “${p.name}”? The designs in it stay in the library.`)) return;
-                if (projectId === p.id) setProjectId(undefined);
-                removeProject.mutate(p.id);
-              }}
-            />
+            <ContextMenu key={p.id}>
+              <ContextMenuTrigger>
+                <SideRow
+                  active={projectId === p.id}
+                  onClick={() => setProjectId(p.id)}
+                  onToggle={() => setOpenProjects((s) => ({ ...s, [p.id]: !s[p.id] }))}
+                  expanded={openProjects[p.id] ?? false}
+                  icon={<Folder className="h-3.5 w-3.5" />}
+                  label={p.name}
+                  count={p.designs}
+                />
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem icon={<FolderOpen className="h-3.5 w-3.5" />} onSelect={() => setProjectId(p.id)}>
+                  Show designs
+                </ContextMenuItem>
+                <ContextMenuItem
+                  icon={<Pencil className="h-3.5 w-3.5" />}
+                  onSelect={() => {
+                    const name = prompt("Rename project", p.name)?.trim();
+                    if (name && name !== p.name) renameProject.mutate({ id: p.id, name });
+                  }}
+                >
+                  Rename…
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  danger
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
+                  onSelect={() => {
+                    // The designs inside survive — the API detaches rather than
+                    // cascades, so deleting a folder cannot lose work.
+                    if (!confirm(`Delete “${p.name}”? The designs in it stay in the library.`)) return;
+                    if (projectId === p.id) setProjectId(undefined);
+                    removeProject.mutate(p.id);
+                  }}
+                >
+                  Delete project
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
           <NewProjectRow onCreate={(name) => createProject.mutate(name)} />
 
@@ -273,7 +351,9 @@ export function Library() {
           ) : (
             <ul className="divide-y divide-neutral-100">
               {items.map((design) => (
-                <li key={design.id} className="group flex gap-4 px-5 py-3 hover:bg-neutral-50">
+                <ContextMenu key={design.id}>
+                <ContextMenuTrigger asChild>
+                <li className="group flex gap-4 px-5 py-3 hover:bg-neutral-50">
                   <Link
                     to={`/d/${design.id}`}
                     className="checkerboard block h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white"
@@ -316,35 +396,110 @@ export function Library() {
                   </div>
 
                   <div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    <Button asChild variant="secondary" size="sm">
-                      <Link to={`/d/${design.id}`}>open</Link>
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
+                    <IconButton label="Open" onClick={() => { window.location.href = `/d/${design.id}`; }}>
+                      <ExternalLink className="h-4 w-4" />
+                    </IconButton>
+                    <IconButton
+                      label="Duplicate"
                       onClick={() => duplicate.mutate(design.id)}
                       disabled={duplicate.isPending}
                     >
-                      dup
-                    </Button>
-                    <Button asChild variant="secondary" size="sm">
-                      <a href={`/api/designs/${design.id}/render?format=png`} download={`${design.name}.png`}>
-                        ↓ png
-                      </a>
-                    </Button>
-                    <Button asChild variant="secondary" size="sm">
-                      <a href={`/api/designs/${design.id}/render?format=jpg`} download={`${design.name}.jpg`}>
-                        jpg
-                      </a>
-                    </Button>
+                      <Copy className="h-4 w-4" />
+                    </IconButton>
+                    <IconButton
+                      label="Download PNG"
+                      onClick={() => download(design.id, design.name, "png")}
+                    >
+                      <Download className="h-4 w-4" />
+                    </IconButton>
+                    <IconButton
+                      label="Delete"
+                      danger
+                      onClick={() => {
+                        if (!confirm(`Delete “${design.name}”? This cannot be undone.`)) return;
+                        removeDesign.mutate(design.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </IconButton>
                   </div>
                 </li>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem
+                    icon={<ExternalLink className="h-3.5 w-3.5" />}
+                    onSelect={() => { window.location.href = `/d/${design.id}`; }}
+                  >
+                    Open
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon={<Copy className="h-3.5 w-3.5" />}
+                    onSelect={() => duplicate.mutate(design.id)}
+                  >
+                    Duplicate
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon={<Pencil className="h-3.5 w-3.5" />}
+                    onSelect={() => {
+                      const name = prompt("Rename design", design.name)?.trim();
+                      if (name && name !== design.name) renameDesign.mutate({ id: design.id, name });
+                    }}
+                  >
+                    Rename…
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    icon={<Download className="h-3.5 w-3.5" />}
+                    onSelect={() => download(design.id, design.name, "png")}
+                  >
+                    Download PNG
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon={<Download className="h-3.5 w-3.5" />}
+                    onSelect={() => download(design.id, design.name, "jpg")}
+                  >
+                    Download JPG
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuSubMenu label="Move to" icon={<FolderInput className="h-3.5 w-3.5" />}>
+                    <ContextMenuLabel>Project</ContextMenuLabel>
+                    <ContextMenuItem
+                      disabled={design.projectId === null}
+                      onSelect={() => moveDesign.mutate({ id: design.id, projectId: null })}
+                    >
+                      No project
+                    </ContextMenuItem>
+                    {(projects.data?.items ?? []).map((p) => (
+                      <ContextMenuItem
+                        key={p.id}
+                        disabled={design.projectId === p.id}
+                        icon={<Folder className="h-3.5 w-3.5" />}
+                        onSelect={() => moveDesign.mutate({ id: design.id, projectId: p.id })}
+                      >
+                        {p.name}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubMenu>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    danger
+                    icon={<Trash2 className="h-3.5 w-3.5" />}
+                    onSelect={() => {
+                      if (!confirm(`Delete “${design.name}”? This cannot be undone.`)) return;
+                      removeDesign.mutate(design.id);
+                    }}
+                  >
+                    Delete
+                  </ContextMenuItem>
+                </ContextMenuContent>
+                </ContextMenu>
               ))}
             </ul>
           )}
         </main>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -362,7 +517,6 @@ function SideRow({
   icon,
   label,
   count,
-  onDelete,
   onToggle,
   expanded,
   title,
@@ -372,7 +526,6 @@ function SideRow({
   icon: React.ReactNode;
   label: string;
   count?: number;
-  onDelete?: () => void;
   onToggle?: () => void;
   expanded?: boolean;
   title?: string;
@@ -399,18 +552,6 @@ function SideRow({
           <span className={cn("text-xs", active ? "text-white/60" : "text-neutral-400")}>{count}</span>
         ) : null}
       </button>
-      {onDelete ? (
-        <button
-          onClick={onDelete}
-          aria-label={`Delete ${label}`}
-          className={cn(
-            "rounded p-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 focus:opacity-100",
-            active ? "hover:bg-white/20" : "hover:bg-neutral-200",
-          )}
-        >
-          <X className="h-3 w-3" />
-        </button>
-      ) : null}
     </div>
   );
 }

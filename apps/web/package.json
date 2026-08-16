@@ -26,7 +26,9 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
     "sonner": "^1.5.0",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.5.4",
+    "@radix-ui/react-context-menu": "^2.2.2",
+    "@radix-ui/react-tooltip": "^1.1.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
