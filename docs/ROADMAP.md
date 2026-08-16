@@ -94,6 +94,20 @@ Three things cost a deployment each and are worth not rediscovering:
 
 Redis is `redis-secondary` database 5; the channel is `creative:events`.
 
+**Public signup is closed** (`DISABLE_SIGNUP=true` on both applications), because the
+URL is public and the instance has one owner. Provision an account with the script,
+which writes the rows itself for exactly that reason — it cannot depend on the endpoint
+that is switched off:
+
+```bash
+# on the server
+docker exec -it $(docker ps -qf name=wnejx0ww0qxdpc81s4zxgner) \
+  sh -c "cd /app && bun apps/api/scripts/upsert-user.ts you@example.com 'secret' 'Your Name'"
+```
+
+Re-running it against an existing email resets that password. To reopen signup instead,
+delete `DISABLE_SIGNUP` and redeploy.
+
 #### Still to do here
 
 - `Dockerfile` — multi-stage, tempe-sadari's shape: install → builder (prisma generate,
