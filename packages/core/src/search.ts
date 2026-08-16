@@ -32,8 +32,12 @@ export function layerText(layer: TextLayer): string {
  */
 export function documentText(doc: Document): string {
   const lines: string[] = [];
-  if (doc.name) lines.push(doc.name);
 
+  // `doc.name` is deliberately not included. It is metadata — for a design filled
+  // from a template it is the template's name — and indexing it means a search for
+  // "promo" matches every design made from promo-band whether or not one word of
+  // its copy says so, and the library quotes "promo-band" where the headline
+  // should be.
   for (const layer of doc.layers) {
     if (layer.type !== "text" || layer.hidden) continue;
     const text = layerText(layer).replace(/\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}/g, " ").replace(/\s+/g, " ").trim();
