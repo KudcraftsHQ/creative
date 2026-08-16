@@ -43,9 +43,16 @@ RUN cd /tmp/prod && (bun install --frozen-lockfile --production || bun install -
 # ────────────────────────────────────────────────────────────
 FROM base AS builder
 
+# Bun installs a workspace's dependencies into that workspace's own node_modules
+# and keeps the shared store at the root — so every package that takes part in the
+# build needs both. Missing packages/core here is what makes `zod` unresolvable
+# from core's own source.
 COPY --from=install /tmp/dev/node_modules ./node_modules
 COPY --from=install /tmp/dev/apps/api/node_modules ./apps/api/node_modules
 COPY --from=install /tmp/dev/apps/web/node_modules ./apps/web/node_modules
+COPY --from=install /tmp/dev/packages/core/node_modules ./packages/core/node_modules
+# The fonts are installed below by running the CLI itself, so it needs its deps.
+COPY --from=install /tmp/dev/apps/cli/node_modules ./apps/cli/node_modules
 COPY package.json bun.lock tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
@@ -83,6 +90,9 @@ RUN apt-get update \
 
 COPY --from=install /tmp/prod/node_modules ./node_modules
 COPY --from=install /tmp/prod/apps/api/node_modules ./apps/api/node_modules
+# The API bundle keeps @napi-rs/canvas external and the worker runs core from
+# source, so core's own dependencies have to be present at runtime too.
+COPY --from=install /tmp/prod/packages/core/node_modules ./packages/core/node_modules
 
 COPY package.json ./
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json

@@ -20,6 +20,7 @@
     "@aws-sdk/s3-request-presigner": "^3.658.0",
     "@creative/core": "workspace:*",
     "@hono/zod-validator": "^0.4.1",
+    "@napi-rs/canvas": "^1.0.6",
     "@prisma/client": "^5.22.0",
     "better-auth": "^1.0.21",
     "hono": "^4.6.10",
