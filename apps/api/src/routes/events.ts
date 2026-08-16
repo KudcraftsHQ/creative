@@ -19,13 +19,7 @@ const PING_MS = 25_000;
 export const eventsRoute = new Hono().use("*", requireAuth).get("/", (c) => {
   const { userId } = c.get("auth");
 
-  // Told explicitly to every proxy in the path. Cloudflare sits in front of this
-  // in production, and a stream that is buffered or compressed arrives in one
-  // lump at the end — which for live preview is the same as not arriving.
-  c.header("cache-control", "no-cache, no-transform");
-  c.header("x-accel-buffering", "no");
-
-  return streamSSE(c, async (stream) => {
+  const response = streamSSE(c, async (stream) => {
     const queue: LibraryEvent[] = [];
     let wake: (() => void) | null = null;
 
@@ -74,4 +68,16 @@ export const eventsRoute = new Hono().use("*", requireAuth).get("/", (c) => {
       unsubscribe();
     }
   });
+
+  // Cloudflare sits in front of this in production, and a proxy that buffers the
+  // stream delivers it in one lump at the end — which for live preview is the
+  // same as not delivering it.
+  //
+  // Set on the response, not through `c.header()`: streamSSE writes its own
+  // headers when streaming starts, and anything set beforehand is overwritten.
+  // `cache-control` is one it owns outright — it stays `no-cache`, which is
+  // correct anyway — so this is the one line that survives, and it is the one
+  // that matters.
+  response.headers.set("x-accel-buffering", "no");
+  return response;
 });
