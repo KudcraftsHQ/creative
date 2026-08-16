@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { encode, lint, render, parseDocument, type Document } from "@creative/core";
+import { encode, lint } from "@creative/core";
 import { requireAuth, requireScope } from "../middlewares/auth.ts";
 import {
   createDesign,
@@ -18,6 +18,7 @@ import {
   listDesigns,
   updateDesign,
 } from "../services/design.ts";
+import { renderStored } from "../services/render.ts";
 
 const listQuery = z.object({
   q: z.string().trim().min(1).optional(),
@@ -96,8 +97,7 @@ export const designsRoute = new Hono()
     if (!design) return c.json({ error: "no such design" }, 404);
 
     const q = c.req.valid("query");
-    const doc = parseDocument(design.document) as Document;
-    const { canvas } = await render(doc);
+    const { canvas } = await renderStored(design.document);
     const out = await encode(canvas, { format: q.format, width: q.width, maxKb: q.maxKb });
 
     return c.body(new Uint8Array(out.buffer), 200, {
@@ -115,7 +115,6 @@ export const designsRoute = new Hono()
     const design = await getDesign(userId, c.req.param("id"));
     if (!design) return c.json({ error: "no such design" }, 404);
 
-    const doc = parseDocument(design.document) as Document;
-    const { canvas, report } = await render(doc);
+    const { doc, canvas, report } = await renderStored(design.document);
     return c.json({ findings: lint({ doc, report, canvas }), layers: report.layers });
   });

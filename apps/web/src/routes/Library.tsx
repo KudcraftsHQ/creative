@@ -9,7 +9,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Folder, LayoutGrid } from "lucide-react";
+import { toast } from "sonner";
+import { Search, Plus, Folder, LayoutGrid, X } from "lucide-react";
 import { api, renderUrl, type DesignSummary, type Project } from "@/lib/api.ts";
 import { useLiveLibrary } from "@/lib/use-live.ts";
 import { Button, Input, Spinner, Empty } from "@/components/ui.tsx";
@@ -77,6 +78,20 @@ export function Library() {
     },
   });
 
+  const createProject = useMutation({
+    mutationFn: (name: string) => api.post<Project>("/api/projects", { name }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not create that project"),
+  });
+
+  const removeProject = useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/projects/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["designs"] });
+    },
+  });
+
   const items = designs.data?.items ?? [];
 
   return (
@@ -114,8 +129,16 @@ export function Library() {
             icon={<Folder className="h-3.5 w-3.5" />}
             label={p.name}
             count={p.designs}
+            onDelete={() => {
+              // The designs inside survive — the API detaches rather than cascades,
+              // so deleting a folder cannot lose work.
+              if (!confirm(`Delete the project “${p.name}”? The designs in it stay in the library.`)) return;
+              if (projectId === p.id) setProjectId(undefined);
+              removeProject.mutate(p.id);
+            }}
           />
         ))}
+        <NewProjectChip onCreate={(name) => createProject.mutate(name)} />
       </nav>
 
       <main className="mt-6">
@@ -176,28 +199,87 @@ function FolderChip({
   icon,
   label,
   count,
+  onDelete,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   count?: number;
+  onDelete?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
+    <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+        "group inline-flex items-center gap-1.5 rounded-full border py-1 pl-3 text-xs transition-colors",
+        onDelete ? "pr-1" : "pr-3",
         active
           ? "border-neutral-900 bg-neutral-900 text-white"
           : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100",
       )}
     >
-      {icon}
-      {label}
-      {count !== undefined ? (
-        <span className={active ? "text-white/60" : "text-neutral-400"}>{count}</span>
+      <button onClick={onClick} className="inline-flex items-center gap-1.5">
+        {icon}
+        {label}
+        {count !== undefined ? (
+          <span className={active ? "text-white/60" : "text-neutral-400"}>{count}</span>
+        ) : null}
+      </button>
+      {onDelete ? (
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${label}`}
+          className={cn(
+            "rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
+            active ? "hover:bg-white/20" : "hover:bg-neutral-200",
+          )}
+        >
+          <X className="h-3 w-3" />
+        </button>
       ) : null}
-    </button>
+    </span>
+  );
+}
+
+/** A chip that becomes a field. A dialog for one text input is a dialog too many. */
+function NewProjectChip({ onCreate }: { onCreate: (name: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+
+  const commit = () => {
+    const value = name.trim();
+    if (value) onCreate(value);
+    setName("");
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
+      >
+        <Plus className="h-3 w-3" />
+        Project
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={name}
+      placeholder="Project name"
+      onChange={(e) => setName(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") {
+          setName("");
+          setOpen(false);
+        }
+      }}
+      className="h-[26px] w-36 rounded-full border border-neutral-300 px-3 text-xs outline-none focus:ring-2 focus:ring-neutral-400"
+    />
   );
 }

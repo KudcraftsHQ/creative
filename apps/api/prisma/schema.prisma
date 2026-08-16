@@ -36,6 +36,7 @@ model User {
   designs       Design[]
   oauthCodes    OAuthCode[]
   oauthTokens   OAuthToken[]
+  assets        Asset[]
 
   @@map("user")
 }
@@ -171,4 +172,32 @@ model OAuthToken {
 
   @@index([userId])
   @@map("oauth_token")
+}
+
+// ── uploaded images ─────────────────────────────────────────────────────────
+
+/// An uploaded image.
+///
+/// Stored as bytes in Postgres rather than in a bucket, because there is no
+/// bucket: the R2 token this deployment has is scoped to another project. That
+/// is a deliberate trade and not a permanent one — `key` is where an object name
+/// goes the day a bucket exists, and `data` is null from then on.
+///
+/// Ids are unguessable and the read route is public, so a document referencing an
+/// asset by URL renders anywhere — from the CLI, from the worker, from a browser —
+/// without carrying a credential. Assets are immutable; there is no update.
+model Asset {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  mimeType  String
+  bytes     Int
+  data      Bytes?
+  key       String?
+  createdAt DateTime @default(now())
+
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, createdAt])
+  @@map("asset")
 }

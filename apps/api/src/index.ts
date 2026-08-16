@@ -18,6 +18,7 @@ import { designsRoute } from "./routes/designs.ts";
 import { projectsRoute } from "./routes/projects.ts";
 import { eventsRoute } from "./routes/events.ts";
 import { templatesRoute, fontsRoute } from "./routes/templates.ts";
+import { assetsRoute, assetPublicRoute } from "./routes/assets.ts";
 import { oauthRoute } from "./routes/oauth.ts";
 
 export const app = new Hono();
@@ -30,6 +31,10 @@ app.use("/api/*", cors({ origin: (origin) => origin ?? "*", credentials: true })
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
+// Reading an asset is public and must be matched before the authed /api/assets
+// router below — a document renders from a terminal that holds no session.
+app.route("/api/assets", assetPublicRoute);
+
 // Mounted at the root: `creative login` builds /oauth/authorize and /oauth/token
 // from the bare API origin, so these cannot live under /api.
 app.route("/oauth", oauthRoute);
@@ -41,6 +46,7 @@ const apiRoutes = app
   .route("/designs", designsRoute)
   .route("/projects", projectsRoute)
   .route("/events", eventsRoute)
+  .route("/assets", assetsRoute)
   .route("/templates", templatesRoute)
   .route("/fonts", fontsRoute);
 
