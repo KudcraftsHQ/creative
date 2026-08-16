@@ -19,7 +19,9 @@ jobs:
             target: linux-x64
           - os: ubuntu-24.04-arm
             target: linux-arm64
-          - os: macos-13
+          # macos-13 was retired in December 2025; macos-15-intel is GitHub's
+          # replacement x86_64 image and the last one — Intel goes away in 2027.
+          - os: macos-15-intel
             target: macos-x64
           - os: macos-latest
             target: macos-arm64
