@@ -34,6 +34,9 @@ export function readConfig(): Config {
 }
 
 export function writeConfig(cfg: Config): void {
+  // First run has no ~/.creative yet — `creative login` would otherwise fail on
+  // the very write that is meant to create the file.
+  paths.home();
   const p = paths.config();
   writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
   chmodSync(p, 0o600);
