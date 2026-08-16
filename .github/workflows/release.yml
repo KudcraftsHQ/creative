@@ -1,0 +1,163 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # Built on native runners rather than cross-compiled: the renderer is Skia behind
+  # a native addon, so each platform's binary has to be produced on that platform.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+          - os: macos-13
+            target: macos-x64
+          - os: macos-latest
+            target: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build
+        run: |
+          mkdir -p dist/creative-${{ matrix.target }}
+          bun build apps/cli/src/index.ts --compile --outfile dist/creative-${{ matrix.target }}/creative
+          bun build apps/mcp/src/index.ts --compile --outfile dist/creative-${{ matrix.target }}/creative-mcp
+          cp README.md LICENSE dist/creative-${{ matrix.target }}/
+          cp -r templates dist/creative-${{ matrix.target }}/templates
+
+      - name: Smoke test
+        run: dist/creative-${{ matrix.target }}/creative --version
+
+      - name: Archive
+        run: |
+          cd dist
+          tar -czf creative-${{ github.ref_name }}-${{ matrix.target }}.tar.gz creative-${{ matrix.target }}
+          shasum -a 256 creative-${{ github.ref_name }}-${{ matrix.target }}.tar.gz > creative-${{ github.ref_name }}-${{ matrix.target }}.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: creative-${{ matrix.target }}
+          path: dist/*.tar.gz*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - run: cat artifacts/*.sha256 > artifacts/checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/checksums.txt
+          generate_release_notes: true
+
+  # Published as a cask, not a formula: a Homebrew formula that installs a prebuilt
+  # binary was always a fiction, and the cask covers macOS and Linux.
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, '-') }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Write the cask
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          v="${VERSION#v}"
+          sha() { cut -d' ' -f1 "artifacts/creative-${VERSION}-$1.tar.gz.sha256"; }
+          mkdir -p out
+          cat > out/creative.rb <<EOF
+          cask "creative" do
+            version "${v}"
+
+            on_macos do
+              on_arm do
+                sha256 "$(sha macos-arm64)"
+                url "https://github.com/KudcraftsHQ/creative/releases/download/${VERSION}/creative-${VERSION}-macos-arm64.tar.gz"
+                binary "creative-macos-arm64/creative"
+                binary "creative-macos-arm64/creative-mcp"
+              end
+              on_intel do
+                sha256 "$(sha macos-x64)"
+                url "https://github.com/KudcraftsHQ/creative/releases/download/${VERSION}/creative-${VERSION}-macos-x64.tar.gz"
+                binary "creative-macos-x64/creative"
+                binary "creative-macos-x64/creative-mcp"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                sha256 "$(sha linux-arm64)"
+                url "https://github.com/KudcraftsHQ/creative/releases/download/${VERSION}/creative-${VERSION}-linux-arm64.tar.gz"
+                binary "creative-linux-arm64/creative"
+                binary "creative-linux-arm64/creative-mcp"
+              end
+              on_intel do
+                sha256 "$(sha linux-x64)"
+                url "https://github.com/KudcraftsHQ/creative/releases/download/${VERSION}/creative-${VERSION}-linux-x64.tar.gz"
+                binary "creative-linux-x64/creative"
+                binary "creative-linux-x64/creative-mcp"
+              end
+            end
+
+            name "creative"
+            desc "Headless design engine: JSON documents, Skia rendering, auto-fitting rich text"
+            homepage "https://github.com/KudcraftsHQ/creative"
+
+            # The binaries are unsigned, so Gatekeeper quarantines anything downloaded
+            # this way. Clearing the attribute is the documented workaround for an
+            # unnotarised cask.
+            postflight do
+              if OS.mac?
+                system_command "/usr/bin/xattr",
+                               args: ["-dr", "com.apple.quarantine", staged_path]
+              end
+            end
+          end
+          EOF
+          cat out/creative.rb
+
+      - name: Push to the tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        # An absent token skips the cask and leaves the rest of the release shipped,
+        # rather than failing the whole tag.
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set — skipping the tap update."
+            exit 0
+          fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/KudcraftsHQ/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cp out/creative.rb tap/Casks/creative.rb
+          cd tap
+          git config user.name "github-actions"
+          git config user.email "noreply@kudcrafts.com"
+          git add Casks/creative.rb
+          git commit -m "creative ${{ github.ref_name }}" || exit 0
+          git push

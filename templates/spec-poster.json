@@ -1,0 +1,353 @@
+{
+  "name": "spec-poster",
+  "description": "Spec poster for a parts listing: light background, stacked multi-weight headline on the left, product cut-out on the right, badge rows, footer claim bar.",
+  "slots": [
+    {
+      "id": "photo",
+      "type": "image",
+      "required": true,
+      "label": "product photograph (a transparent cut-out reads best)"
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "required": true,
+      "label": "product name, the loud red line",
+      "maxChars": 18
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "required": true,
+      "label": "the black line under it",
+      "maxChars": 22
+    },
+    {
+      "id": "detail",
+      "type": "text",
+      "required": false,
+      "default": "",
+      "label": "small line under the subtitle",
+      "maxChars": 20
+    },
+    {
+      "id": "corner",
+      "type": "text",
+      "required": false,
+      "default": "HARGA GROSIR\nHUB ADMIN",
+      "label": "top-right note",
+      "maxChars": 34
+    },
+    {
+      "id": "badgeLabel",
+      "type": "text",
+      "required": false,
+      "default": "COCOK UNTUK",
+      "label": "badge heading",
+      "maxChars": 18
+    },
+    {
+      "id": "fitment",
+      "type": "text",
+      "required": false,
+      "default": "",
+      "label": "compatibility list, one per line",
+      "maxChars": 60
+    },
+    {
+      "id": "unit",
+      "type": "text",
+      "required": false,
+      "default": "HARGA SATUAN / PER PCS",
+      "label": "unit note",
+      "maxChars": 30
+    },
+    {
+      "id": "claims",
+      "type": "text",
+      "required": false,
+      "default": "KUAT & AWET · BAYAR DI TEMPAT (COD)",
+      "label": "footer claims",
+      "maxChars": 60
+    },
+    {
+      "id": "accent",
+      "type": "color",
+      "required": false,
+      "default": "#C4161C",
+      "label": "accent red"
+    },
+    {
+      "id": "ink",
+      "type": "color",
+      "required": false,
+      "default": "#1A1A1A",
+      "label": "text colour"
+    },
+    {
+      "id": "bg",
+      "type": "color",
+      "required": false,
+      "default": "#F4F4F4",
+      "label": "background"
+    }
+  ],
+  "document": {
+    "name": "spec-poster",
+    "canvas": {
+      "w": 1080,
+      "h": 1080,
+      "bg": "{{bg}}"
+    },
+    "vars": {
+      "accent": "{{accent}}",
+      "ink": "{{ink}}"
+    },
+    "safeArea": 0,
+    "layers": [
+      {
+        "type": "image",
+        "id": "photo",
+        "src": "{{photo}}",
+        "frame": {
+          "anchor": "right",
+          "inset": [
+            0,
+            0
+          ],
+          "w": 620,
+          "h": 720
+        },
+        "fit": "contain"
+      },
+      {
+        "type": "text",
+        "id": "corner",
+        "frame": {
+          "anchor": "top-right",
+          "inset": [
+            44,
+            40
+          ],
+          "w": 420
+        },
+        "text": "{{corner}}",
+        "font": "Archivo Black",
+        "size": 40,
+        "color": "@ink",
+        "align": "right",
+        "lineHeight": 1.2,
+        "box": {
+          "mode": "fit",
+          "pad": 0
+        },
+        "autofit": {
+          "min": 20,
+          "max": 46
+        }
+      },
+      {
+        "type": "text",
+        "id": "title",
+        "frame": {
+          "anchor": "top-left",
+          "inset": [
+            44,
+            40
+          ],
+          "w": 520
+        },
+        "text": "{{title}}",
+        "font": "Anton",
+        "size": 132,
+        "color": "@accent",
+        "align": "left",
+        "lineHeight": 1.0,
+        "box": {
+          "mode": "fit",
+          "pad": 0
+        },
+        "autofit": {
+          "min": 60,
+          "max": 150
+        }
+      },
+      {
+        "type": "text",
+        "id": "subtitle",
+        "frame": {
+          "below": "title",
+          "gap": 10,
+          "w": 520
+        },
+        "text": "{{subtitle}}",
+        "font": "Anton",
+        "size": 104,
+        "color": "@ink",
+        "align": "left",
+        "lineHeight": 1.02,
+        "box": {
+          "mode": "grow",
+          "pad": 0
+        },
+        "autofit": {
+          "min": 48,
+          "max": 120
+        }
+      },
+      {
+        "type": "text",
+        "id": "detail",
+        "frame": {
+          "below": "subtitle",
+          "gap": 16,
+          "w": 520
+        },
+        "text": "{{detail}}",
+        "font": "Archivo Black",
+        "size": 46,
+        "color": "@ink",
+        "align": "left",
+        "box": {
+          "mode": "grow",
+          "pad": 0
+        },
+        "autofit": {
+          "min": 24,
+          "max": 52
+        }
+      },
+      {
+        "type": "text",
+        "id": "badgeLabel",
+        "frame": {
+          "below": "detail",
+          "gap": 34,
+          "w": 520
+        },
+        "text": "{{badgeLabel}}",
+        "font": "Archivo Black",
+        "size": 40,
+        "color": "#ffffff",
+        "align": "left",
+        "box": {
+          "mode": "grow",
+          "fill": "@accent",
+          "radius": 6,
+          "pad": [
+            22,
+            14
+          ],
+          "perLine": true
+        },
+        "autofit": {
+          "min": 22,
+          "max": 44
+        }
+      },
+      {
+        "type": "text",
+        "id": "fitment",
+        "frame": {
+          "below": "badgeLabel",
+          "gap": 18,
+          "w": 600
+        },
+        "text": "{{fitment}}",
+        "font": "Archivo Black",
+        "size": 42,
+        "color": "@ink",
+        "align": "left",
+        "lineHeight": 1.25,
+        "box": {
+          "mode": "grow",
+          "pad": 0
+        },
+        "autofit": {
+          "min": 20,
+          "max": 46
+        }
+      },
+      {
+        "type": "text",
+        "id": "unit",
+        "frame": {
+          "below": "fitment",
+          "gap": 26,
+          "w": 640
+        },
+        "text": "{{unit}}",
+        "font": "Archivo Black",
+        "size": 36,
+        "color": "#ffffff",
+        "align": "left",
+        "box": {
+          "mode": "grow",
+          "fill": "@accent",
+          "radius": 6,
+          "pad": [
+            22,
+            14
+          ],
+          "perLine": true
+        },
+        "autofit": {
+          "min": 18,
+          "max": 38
+        }
+      },
+      {
+        "type": "rect",
+        "id": "footerBar",
+        "frame": {
+          "anchor": "bottom-left",
+          "inset": [
+            0,
+            0
+          ],
+          "w": 1080,
+          "h": 92
+        },
+        "fill": "@accent"
+      },
+      {
+        "type": "text",
+        "id": "claims",
+        "frame": {
+          "anchor": "bottom-left",
+          "inset": [
+            40,
+            0
+          ],
+          "w": 1000,
+          "h": 92
+        },
+        "text": "{{claims}}",
+        "font": "Archivo Black",
+        "size": 34,
+        "color": "#ffffff",
+        "align": "center",
+        "box": {
+          "mode": "fit",
+          "pad": [
+            0,
+            26
+          ]
+        },
+        "autofit": {
+          "min": 18,
+          "max": 36
+        }
+      }
+    ]
+  },
+  "sizes": {
+    "4:5": {
+      "canvas": {
+        "w": 1080,
+        "h": 1350
+      },
+      "patch": {}
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "setup": "bun install",
+    "run": "echo 'creative has no dev server yet — the web app lands in apps/web'",
+    "archive": "echo 'nothing to clean up'"
+  }
+}

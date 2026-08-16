@@ -1,0 +1,14 @@
+{
+  "name": "@creative/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "creative": "src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@creative/core": "workspace:*",
+    "commander": "^12.1.0"
+  }
+}

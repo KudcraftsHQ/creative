@@ -1,0 +1,73 @@
+{
+  "name": "promo-band",
+  "description": "Photo-first promo: full-bleed image, a highlight block that grows with the headline, fine print anchored under it, optional watermark.",
+  "slots": [
+    { "id": "photo", "type": "image", "required": true, "label": "background photograph", "aspect": "1:1" },
+    { "id": "headline", "type": "text", "required": true, "label": "headline", "maxChars": 30 },
+    { "id": "price", "type": "text", "required": false, "default": "", "label": "the number to shout", "maxChars": 6 },
+    { "id": "kicker", "type": "text", "required": false, "default": "RIBUAN!", "label": "after the price", "maxChars": 12 },
+    { "id": "fine", "type": "text", "required": false, "default": "* MIN 6 IKAT", "label": "fine print", "maxChars": 22 },
+    { "id": "block", "type": "color", "required": false, "default": "#F5C518", "label": "highlight colour" },
+    { "id": "ink", "type": "color", "required": false, "default": "#3B1E0A", "label": "text colour" },
+    { "id": "accent", "type": "color", "required": false, "default": "#B3261E", "label": "price colour" },
+    { "id": "watermark", "type": "image", "required": false, "label": "logo, bottom-right" }
+  ],
+  "document": {
+    "name": "promo-band",
+    "canvas": { "w": 1080, "h": 1080, "bg": "#ffffff" },
+    "vars": {
+      "block": "{{block}}",
+      "ink": "{{ink}}",
+      "accent": "{{accent}}"
+    },
+    "safeArea": 0,
+    "layers": [
+      {
+        "type": "image",
+        "id": "photo",
+        "src": "{{photo}}",
+        "frame": "full",
+        "fit": "cover",
+        "focal": [0.5, 0.45]
+      },
+      {
+        "type": "text",
+        "id": "headline",
+        "frame": { "anchor": "top-right", "inset": [40, 40], "w": 580 },
+        "align": "left",
+        "box": { "mode": "grow", "fill": "@block", "radius": 16, "pad": [30, 20], "perLine": true },
+        "autofit": { "min": 40, "max": 110 },
+        "runs": [
+          { "text": "{{headline}}", "font": "Anton", "size": 88, "color": "@ink" },
+          { "text": "{{price}}", "font": "Anton", "size": 122, "color": "@accent" },
+          { "text": "{{kicker}}", "font": "Anton", "size": 88, "color": "@ink" }
+        ]
+      },
+      {
+        "type": "text",
+        "id": "fine",
+        "frame": { "below": "headline", "gap": 14, "align": "end" },
+        "text": "{{fine}}",
+        "font": "Archivo Black",
+        "size": 30,
+        "color": "@ink",
+        "align": "right",
+        "box": { "mode": "grow", "fill": "@block", "radius": 10, "pad": [20, 13], "perLine": true },
+        "autofit": { "min": 18, "max": 40 }
+      },
+      {
+        "type": "image",
+        "id": "watermark",
+        "src": "{{watermark}}",
+        "frame": { "anchor": "bottom-right", "inset": [32, 32], "w": 170, "h": 60 },
+        "fit": "contain",
+        "opacity": 0.55,
+        "hidden": true
+      }
+    ]
+  },
+  "sizes": {
+    "4:5": { "canvas": { "w": 1080, "h": 1350 }, "patch": {} },
+    "9:16": { "canvas": { "w": 1080, "h": 1920 }, "patch": {} }
+  }
+}

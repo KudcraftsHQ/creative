@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      # The suite installs Anton from Google Fonts on first run; cache it so CI is
+      # not hitting the same three files on every push.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.creative/fonts
+          key: creative-fonts-v1
+
+      - run: bun test
+      - run: bun run typecheck
+
+      # A compile failure here is a release failure later, and this is the cheap
+      # place to find out.
+      - run: bun build apps/cli/src/index.ts --compile --outfile dist/creative
+      - run: ./dist/creative --version

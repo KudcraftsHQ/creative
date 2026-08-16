@@ -1,0 +1,16 @@
+{
+  "name": "creative",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "cli": "bun run apps/cli/src/index.ts",
+    "build:cli": "bun build apps/cli/src/index.ts --compile --outfile dist/creative",
+    "typecheck": "bun --filter '*' typecheck",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.3"
+  }
+}
