@@ -60,6 +60,26 @@ export interface DesignSummary {
   projectId: string | null;
   updatedAt: string;
   searchText: string;
+  /** The template it was filled from, when it came from one. */
+  templateName: string | null;
+  /** Families the document draws with, derived on write. */
+  fonts: string[];
+  /** "web" | "cli" | "mcp" | "worker" — where the last write came from. */
+  updatedVia: string | null;
+}
+
+export interface TemplateSummary {
+  name: string;
+  description?: string;
+  sizes: string[];
+  canvas: { w: number; h: number };
+  slots: Array<{ id: string; type: string; required: boolean; maxChars?: number; label?: string }>;
+}
+
+export interface FontEntry {
+  family: string;
+  license: string;
+  source: string;
 }
 
 export interface Design extends DesignSummary {

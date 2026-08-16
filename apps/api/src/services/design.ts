@@ -10,7 +10,7 @@
  * Both live here rather than in the route because the worker writes designs too
  * and must not be able to skip either.
  */
-import { documentText, parseDocument, type Document } from "@creative/core";
+import { documentFonts, documentText, parseDocument, type Document } from "@creative/core";
 import { prisma } from "../lib/prisma.ts";
 import { publish } from "../lib/events.ts";
 import { remove } from "../lib/storage.ts";
@@ -19,31 +19,45 @@ export interface DesignInput {
   name: string;
   document: unknown;
   projectId?: string | null;
+  templateName?: string | null;
 }
 
+/** Where a write came from, so the editor can say "via CLI". */
+export type Via = "web" | "cli" | "mcp" | "worker";
+
 /** Validate a document and pull out everything the row derives from it. */
-function derive(raw: unknown): { document: Document; searchText: string; width: number; height: number } {
+function derive(raw: unknown): {
+  document: Document;
+  searchText: string;
+  fonts: string[];
+  width: number;
+  height: number;
+} {
   const document = parseDocument(raw);
   return {
     document,
     searchText: documentText(document),
+    fonts: documentFonts(document),
     width: document.canvas.w,
     height: document.canvas.h,
   };
 }
 
-export async function createDesign(ownerId: string, input: DesignInput) {
-  const { document, searchText, width, height } = derive(input.document);
+export async function createDesign(ownerId: string, input: DesignInput, via: Via = "web") {
+  const { document, searchText, fonts, width, height } = derive(input.document);
 
   const design = await prisma.design.create({
     data: {
       name: input.name,
       ownerId,
       projectId: input.projectId ?? null,
+      templateName: input.templateName ?? null,
       document: document as unknown as object,
       searchText,
+      fonts,
       width,
       height,
+      updatedVia: via,
     },
   });
 
@@ -51,7 +65,12 @@ export async function createDesign(ownerId: string, input: DesignInput) {
   return design;
 }
 
-export async function updateDesign(ownerId: string, id: string, input: Partial<DesignInput>) {
+export async function updateDesign(
+  ownerId: string,
+  id: string,
+  input: Partial<DesignInput>,
+  via: Via = "web",
+) {
   const existing = await prisma.design.findFirst({ where: { id, ownerId } });
   if (!existing) return null;
 
@@ -66,10 +85,12 @@ export async function updateDesign(ownerId: string, id: string, input: Partial<D
         ? {
             document: derived.document as unknown as object,
             searchText: derived.searchText,
+            fonts: derived.fonts,
             width: derived.width,
             height: derived.height,
           }
         : {}),
+      updatedVia: via,
       version: { increment: 1 },
     },
   });
@@ -141,6 +162,10 @@ export async function listDesigns(ownerId: string, o: ListOptions) {
       projectId: true,
       updatedAt: true,
       searchText: true,
+      templateName: true,
+      fonts: true,
+      updatedVia: true,
+      project: { select: { name: true } },
     },
   });
 

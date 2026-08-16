@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import { useSession } from "@/lib/auth-client.ts";
 import { Library } from "@/routes/Library.tsx";
 import { Editor } from "@/routes/Editor.tsx";
+import { Assets } from "@/routes/Assets.tsx";
 import { Login } from "@/routes/Login.tsx";
 import { Spinner } from "@/components/ui.tsx";
 import "./index.css";
@@ -51,6 +52,14 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireSession>
                 <Library />
+              </RequireSession>
+            }
+          />
+          <Route
+            path="/assets"
+            element={
+              <RequireSession>
+                <Assets />
               </RequireSession>
             }
           />
