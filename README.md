@@ -71,6 +71,7 @@ the final check is a visual one.
 | `creative rmbg photo.jpg` | cut out to transparent PNG |
 | `creative color photo.jpg --saturation 1.2 --tint "#F5C518"` | grade |
 | `creative export out.png --max-kb 300 --sizes 1080,800,400` | fit a budget |
+| `creative-mcp` | the MCP server, over stdio |
 | `creative login` | OAuth through the browser, for the shared library |
 
 Everything except `login` and `rmbg` works offline.

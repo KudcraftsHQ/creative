@@ -10,8 +10,8 @@
  * Finishing (feather, matte, shadow) happens locally either way — it is what stops a
  * removed background from looking cut out with scissors.
  */
-import sharp from "sharp";
 import { readFileSync } from "node:fs";
+import { featherAlpha, addShadow, pad as padImage } from "./imaging.ts";
 
 export type Provider = "removebg" | "photoroom" | "clipdrop";
 
@@ -92,50 +92,17 @@ export async function removeBackground(
 
 /** Feather, pad and shadow — applied to any transparent PNG, cut out here or not. */
 export async function finish(png: Buffer, opts: RemoveOptions): Promise<Buffer> {
-  let img = sharp(png, { failOn: "none" }).ensureAlpha();
+  let buf = png;
 
-  if (opts.pad) {
-    img = img.extend({
-      top: opts.pad, bottom: opts.pad, left: opts.pad, right: opts.pad,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    });
-  }
-
-  let buf = await img.png().toBuffer();
-
-  if (opts.feather && opts.feather > 0) {
-    // Blur the alpha channel only: blurring the colour too would bleed the
-    // background's fringe back into the subject's edge.
-    const { width, height } = await sharp(buf).metadata();
-    const alpha = await sharp(buf).extractChannel("alpha").blur(opts.feather).toBuffer();
-    buf = await sharp(buf)
-      .removeAlpha()
-      .joinChannel(alpha)
-      .png()
-      .toBuffer();
-    void width; void height;
-  }
+  if (opts.feather && opts.feather > 0) buf = await featherAlpha(buf, opts.feather);
 
   if (opts.shadow) {
+    // Padding happens as part of the shadow pass so the blur is not clipped by the
+    // original bounds — a shadow cut off at the edge looks worse than none.
     const { blur, x, y, opacity } = opts.shadow;
-    const meta = await sharp(buf).metadata();
-    const w = meta.width!, h = meta.height!;
-    const alpha = await sharp(buf).extractChannel("alpha").blur(blur).toBuffer();
-    const shadow = await sharp({
-      create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    })
-      .joinChannel(await sharp(alpha).linear(opacity, 0).toBuffer())
-      .png()
-      .toBuffer();
-    buf = await sharp({
-      create: { width: w, height: h, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-    })
-      .composite([
-        { input: shadow, left: Math.round(x), top: Math.round(y), blend: "over" },
-        { input: buf, blend: "over" },
-      ])
-      .png()
-      .toBuffer();
+    buf = await addShadow(buf, { blur, x, y, opacity }, opts.pad ?? Math.round(blur * 1.5));
+  } else if (opts.pad) {
+    buf = await padImage(buf, opts.pad);
   }
 
   return buf;

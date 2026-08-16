@@ -122,7 +122,7 @@ export function registerImageCommands(program: Command): void {
         const r = await encode(buf, { format, quality: o.quality, maxKb: o.maxKb });
         writeFileSync(out, r.buffer);
         note(`${out}  ${dim(`${r.format} · q${r.quality} · ${humanBytes(r.bytes)}`)}`);
-        if (r.overBudget) note(dim(`  over ${o.maxKb}kB even at q${r.quality}`));
+        if (r.overBudget) note(dim(`  smallest reachable was ${humanBytes(r.bytes)} at q${r.quality} — resize with --sizes to go lower`));
       } catch (err) {
         fail(err);
       }

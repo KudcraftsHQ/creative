@@ -56,7 +56,7 @@ export async function writeImage(
   writeFileSync(out, r.buffer);
   note(`${out}  ${dim(`${r.format} · q${r.quality} · ${humanBytes(r.bytes)}`)}`);
   if (r.overBudget) {
-    note(dim(`  still over ${o.maxKb}kB at the lowest quality tried — try --sizes or a smaller canvas`));
+    note(dim(`  smallest reachable was ${humanBytes(r.bytes)} at q${r.quality} — try --sizes or a smaller canvas`));
   }
 }
 

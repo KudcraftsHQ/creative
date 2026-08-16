@@ -2,6 +2,7 @@ export * from "./types.ts";
 export * from "./paths.ts";
 export * from "./fonts.ts";
 export * from "./text.ts";
+export * from "./imaging.ts";
 export * from "./assets.ts";
 export * from "./render.ts";
 export * from "./export.ts";
