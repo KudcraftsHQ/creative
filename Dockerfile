@@ -57,18 +57,26 @@ COPY package.json bun.lock tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
 COPY templates ./templates
+COPY assets ./assets
 
 RUN cd apps/api && bunx prisma generate
 RUN cd apps/web && bun run build
 RUN cd apps/api && bun run build
 
-# The fonts are installed at build time and baked in, so a render is reproducible
+# The fonts are registered at build time and baked in, so a render is reproducible
 # from the image alone: a container that fetched its faces at boot would render
 # differently the day Google's repository moves a file.
+#
+# From assets/fonts, not from Google. `font add <family>` goes through the GitHub
+# API, whose unauthenticated quota is sixty requests an hour for the entire host —
+# so every deployment spent quota re-downloading the same files, and once it ran
+# out the image stopped building for reasons unrelated to the change. See
+# assets/fonts/README.md.
 ENV CREATIVE_HOME=/app/.creative
-RUN bun run apps/cli/src/index.ts font add Anton \
- && bun run apps/cli/src/index.ts font add "Archivo Black" \
- && bun run apps/cli/src/index.ts font add "Inter"
+RUN bun run apps/cli/src/index.ts font add ./assets/fonts/Anton-Regular.ttf \
+      --family "Anton" --license OFL --source "google/fonts ofl/anton, vendored in assets/fonts" \
+ && bun run apps/cli/src/index.ts font add ./assets/fonts/ArchivoBlack-Regular.ttf \
+      --family "Archivo Black" --license OFL --source "google/fonts ofl/archivoblack, vendored in assets/fonts"
 
 # ────────────────────────────────────────────────────────────
 # runner
