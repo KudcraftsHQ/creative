@@ -43,7 +43,7 @@ three over ~10 real product photographs — the black rubber parts on a dark han
 hard case — and record quality against price in `docs/bgremove-survey.md`. Then set a
 default.
 
-### 3. The web app — `creative.kudcrafts.com` (built, deploying)
+### 3. The web app — `creative.kudcrafts.com` (live)
 
 `apps/api` and `apps/web` exist and are in tempe-sadari's shape. What is done:
 
@@ -55,7 +55,7 @@ default.
   Verified end to end against the real `creative login`.
 - `apps/web` — Vite + React 18 + TanStack Query + Radix + Tailwind + react-router.
   Library (search over the copy in every design, projects as folders, grid) and editor
-  (layer list, preview, inspector, lint panel).
+  (layer list and lint on the left, render in the middle, runs table on the right).
 - Live preview over SSE: `streamSSE`, a singleton `EventSource` pinned on `window`, and
   `ping` keepalive. **The hub is Redis pub/sub**, per the mark on the plan — web and
   worker are separate containers, so an in-process emitter could not reach across them.
@@ -71,12 +71,10 @@ twenty at once) and the editor's image layer can upload or pick from it.
 
 Still open: run designs, and layer reordering / adding a layer in the UI.
 
-### 4. Deployment (live, from the branch)
+### 4. Deployment (live)
 
 Both applications are deployed on Coolify project `creative`
-(`pwwtclouploljs7tlj8zl4qw`) on `vienna-1`, built from **branch `creative-web`** —
-not `main`, because the PR is unmerged and awaiting sign-off. Repoint both to `main`
-when it lands.
+(`pwwtclouploljs7tlj8zl4qw`) on `vienna-1`, built from `main`.
 
 | | uuid | notes |
 |---|---|---|
@@ -111,11 +109,11 @@ docker exec -it $(docker ps -qf name=wnejx0ww0qxdpc81s4zxgner) \
 Re-running it against an existing email resets that password. To reopen signup instead,
 delete `DISABLE_SIGNUP` and redeploy.
 
-#### Still to do here
+The rest of the shape:
 
 - `Dockerfile` — multi-stage, tempe-sadari's shape: install → builder (prisma generate,
-  vite build, bun build) → slim runner. Fonts (Anton, Archivo Black, Inter) are installed
-  at build time into `CREATIVE_HOME=/app/.creative` and baked in, so a render is
+  vite build, bun build) → slim runner. Fonts are registered at build time from
+  `assets/fonts` into `CREATIVE_HOME=/app/.creative` and baked in, so a render is
   reproducible from the image alone. `prisma migrate deploy` runs on start of the web app
   only, so the worker cannot race it.
 - Database `creative-db` created on the shared `postgresql` instance (uuid `n4okooo`) and
