@@ -8,6 +8,7 @@ export * from "./render.ts";
 export * from "./export.ts";
 export * from "./lint.ts";
 export * from "./search.ts";
+export * from "./inventory.ts";
 export * from "./document.ts";
 export * from "./template.ts";
 export * from "./bgremove.ts";

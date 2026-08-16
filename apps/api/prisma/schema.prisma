@@ -119,6 +119,13 @@ model Design {
   /// Bumped on every write; the SSE payload carries it so a tab can ignore
   /// an event describing a version it already has.
   version    Int      @default(1)
+  /// The template this was filled from, when it came from one. The library shows it.
+  templateName String?
+  /// Font families the document draws with, derived on write like searchText.
+  fonts      String[]
+  /// Where the last write came from — "web", "cli", "mcp", "worker". The editor
+  /// says "via CLI" so an edit arriving from a terminal is legible as one.
+  updatedVia String?
 
   projectId  String?
   ownerId    String

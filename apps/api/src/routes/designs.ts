@@ -19,6 +19,21 @@ import {
   updateDesign,
 } from "../services/design.ts";
 import { renderStored } from "../services/render.ts";
+import type { Via } from "../services/design.ts";
+
+/**
+ * Where a write came from.
+ *
+ * A cookie means a browser. A bearer token means something on a terminal, and
+ * `x-creative-client` lets the MCP server say so specifically — without it the
+ * editor would report an agent's edit as "via CLI", which is close enough to true
+ * to be misleading.
+ */
+function via(c: { get: (k: "auth") => { via: string }; req: { header: (n: string) => string | undefined } }): Via {
+  const declared = c.req.header("x-creative-client");
+  if (declared === "mcp" || declared === "cli" || declared === "worker") return declared;
+  return c.get("auth").via === "session" ? "web" : "cli";
+}
 
 const listQuery = z.object({
   q: z.string().trim().min(1).optional(),
@@ -57,7 +72,7 @@ export const designsRoute = new Hono()
   .post("/", requireScope("designs:write"), zValidator("json", createBody), async (c) => {
     const { userId } = c.get("auth");
     try {
-      return c.json(await createDesign(userId, c.req.valid("json")), 201);
+      return c.json(await createDesign(userId, c.req.valid("json"), via(c)), 201);
     } catch (err) {
       // A document that fails validation is a client error with a useful message
       // — core's parse errors name the path and say what was expected.
@@ -75,7 +90,7 @@ export const designsRoute = new Hono()
   .patch("/:id", requireScope("designs:write"), zValidator("json", updateBody), async (c) => {
     const { userId } = c.get("auth");
     try {
-      const design = await updateDesign(userId, c.req.param("id"), c.req.valid("json"));
+      const design = await updateDesign(userId, c.req.param("id"), c.req.valid("json"), via(c));
       if (!design) return c.json({ error: "no such design" }, 404);
       return c.json(design);
     } catch (err) {
@@ -88,6 +103,25 @@ export const designsRoute = new Hono()
     const ok = await deleteDesign(userId, c.req.param("id")!);
     if (!ok) return c.json({ error: "no such design" }, 404);
     return c.body(null, 204);
+  })
+
+  /** Duplicate. The library offers it because a variant is the common next act. */
+  .post("/:id/duplicate", requireScope("designs:write"), async (c) => {
+    const { userId } = c.get("auth");
+    const design = await getDesign(userId, c.req.param("id")!);
+    if (!design) return c.json({ error: "no such design" }, 404);
+
+    const copy = await createDesign(
+      userId,
+      {
+        name: `${design.name} copy`,
+        document: design.document,
+        projectId: design.projectId,
+        templateName: design.templateName,
+      },
+      via(c),
+    );
+    return c.json(copy, 201);
   })
 
   /** The rendered image. The editor's preview is a GET against this. */

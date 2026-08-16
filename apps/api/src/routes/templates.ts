@@ -64,7 +64,12 @@ export const templatesRoute = new Hono()
     try {
       const doc = fill(loadTemplate(path), input.values, { size: input.size });
       return c.json(
-        await createDesign(userId, { name: input.name, document: doc, projectId: input.projectId }),
+        await createDesign(userId, {
+          name: input.name,
+          document: doc,
+          projectId: input.projectId,
+          templateName: c.req.param("name"),
+        }),
         201,
       );
     } catch (err) {
