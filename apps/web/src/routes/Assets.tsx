@@ -12,9 +12,13 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, Trash2, Copy, Check } from "lucide-react";
+import { ArrowLeft, Upload, Trash2, Copy, Check, Download, ExternalLink } from "lucide-react";
 import { api, uploadAsset, type Asset } from "@/lib/api.ts";
 import { Button, Spinner, Empty } from "@/components/ui.tsx";
+import {
+  IconButton, TooltipProvider,
+  ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+} from "@/components/menu.tsx";
 import { cn } from "@/lib/cn.ts";
 
 const kb = (bytes: number) =>
@@ -57,9 +61,21 @@ export function Assets() {
     if (files.length) upload.mutate(files);
   };
 
+  const copyUrl = (asset: Asset) => {
+    navigator.clipboard.writeText(asset.url);
+    setCopied(asset.id);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  const confirmDelete = (asset: Asset) => {
+    if (!confirm(`Delete ${asset.name}? Designs using it will lose the image.`)) return;
+    remove.mutate(asset.id);
+  };
+
   const items = assets.data?.items ?? [];
 
   return (
+    <TooltipProvider>
     <div className="flex h-screen flex-col">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-4">
         <Button asChild variant="ghost" size="icon">
@@ -116,7 +132,9 @@ export function Assets() {
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             {items.map((asset) => (
-              <figure key={asset.id} className="group flex flex-col gap-1.5">
+              <ContextMenu key={asset.id}>
+              <ContextMenuTrigger asChild>
+              <figure className="group flex flex-col gap-1.5">
                 <div className="checkerboard relative overflow-hidden rounded-xl border border-neutral-200 bg-white">
                   <img
                     src={asset.url}
@@ -125,32 +143,25 @@ export function Assets() {
                     className="block aspect-square w-full object-contain"
                   />
                   <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(asset.url);
-                        setCopied(asset.id);
-                        setTimeout(() => setCopied(null), 1500);
-                      }}
-                      aria-label="Copy the URL"
-                      title="Copy the URL — paste it into a document's src"
-                      className="rounded-md bg-white/90 p-1.5 shadow-sm hover:bg-white"
+                    <IconButton
+                      label={copied === asset.id ? "Copied" : "Copy the URL"}
+                      className="h-7 w-7 bg-white/90 shadow-sm"
+                      onClick={() => copyUrl(asset)}
                     >
                       {copied === asset.id ? (
                         <Check className="h-3.5 w-3.5 text-green-600" />
                       ) : (
                         <Copy className="h-3.5 w-3.5" />
                       )}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!confirm(`Delete ${asset.name}? Designs using it will lose the image.`)) return;
-                        remove.mutate(asset.id);
-                      }}
-                      aria-label="Delete"
-                      className="rounded-md bg-white/90 p-1.5 shadow-sm hover:bg-white hover:text-red-600"
+                    </IconButton>
+                    <IconButton
+                      label="Delete"
+                      danger
+                      className="h-7 w-7 bg-white/90 shadow-sm"
+                      onClick={() => confirmDelete(asset)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </IconButton>
                   </div>
                 </div>
                 <figcaption className="min-w-0">
@@ -160,10 +171,41 @@ export function Assets() {
                   </p>
                 </figcaption>
               </figure>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem icon={<Copy className="h-3.5 w-3.5" />} onSelect={() => copyUrl(asset)}>
+                  Copy the URL
+                </ContextMenuItem>
+                <ContextMenuItem
+                  icon={<ExternalLink className="h-3.5 w-3.5" />}
+                  onSelect={() => window.open(asset.url, "_blank", "noopener")}
+                >
+                  Open in a new tab
+                </ContextMenuItem>
+                <ContextMenuItem
+                  icon={<Download className="h-3.5 w-3.5" />}
+                  onSelect={() => {
+                    const a = document.createElement("a");
+                    a.href = asset.url;
+                    a.download = asset.name;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                  }}
+                >
+                  Download
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem danger icon={<Trash2 className="h-3.5 w-3.5" />} onSelect={() => confirmDelete(asset)}>
+                  Delete
+                </ContextMenuItem>
+              </ContextMenuContent>
+              </ContextMenu>
             ))}
           </div>
         )}
       </main>
     </div>
+    </TooltipProvider>
   );
 }

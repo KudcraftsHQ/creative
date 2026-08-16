@@ -19,7 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft, AlertTriangle, Info, Type, Image as ImageIcon, Square,
-  Eye, EyeOff, Upload, Plus, Trash2, Images,
+  Eye, EyeOff, Upload, Plus, Trash2, Images, Copy, Download, ArrowUp, ArrowDown,
 } from "lucide-react";
 import {
   api,
@@ -35,6 +35,10 @@ import {
 } from "@/lib/api.ts";
 import { useLiveLibrary } from "@/lib/use-live.ts";
 import { Button, Input, Spinner } from "@/components/ui.tsx";
+import {
+  IconButton, TooltipProvider,
+  ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+} from "@/components/menu.tsx";
 import { cn } from "@/lib/cn.ts";
 
 const ANCHORS = [
@@ -134,7 +138,62 @@ export function Editor() {
 
   const setCanvas = (w: number, h: number) => write({ ...doc, canvas: { ...doc.canvas, w, h } });
 
+  /**
+   * Reordering is reordering the array, which is also paint order — and layers
+   * anchored with `below` refer *backwards*, so moving one above the layer it
+   * follows would leave the document unrenderable. Refused rather than saved.
+   */
+  const moveLayer = (index: number, by: number) => {
+    const to = index + by;
+    if (to < 0 || to >= layers.length) return;
+    const next = [...layers];
+    const [moved] = next.splice(index, 1);
+    next.splice(to, 0, moved!);
+
+    const ids = next.map((l, j) => layerId(l, j));
+    for (const [j, l] of next.entries()) {
+      const ref = typeof l.frame === "object" && l.frame
+        ? ((l.frame as Record<string, unknown>).below ?? (l.frame as Record<string, unknown>).above)
+        : undefined;
+      if (typeof ref === "string" && ids.indexOf(ref) >= j) {
+        toast.error(`“${ids[j]}” is anchored to “${ref}”, which would end up after it`);
+        return;
+      }
+    }
+    write({ ...doc, layers: next });
+  };
+
+  const duplicateLayer = (index: number) => {
+    const source = layers[index]!;
+    const base = layerId(source, index);
+    const taken = new Set(layers.map((l, j) => layerId(l, j)));
+    let id = `${base}-copy`;
+    for (let n = 2; taken.has(id); n++) id = `${base}-copy-${n}`;
+
+    const next = [...layers];
+    next.splice(index + 1, 0, { ...source, id });
+    write({ ...doc, layers: next });
+  };
+
+  const removeLayer = (index: number) => {
+    const gone = layerId(layers[index]!, index);
+    // A layer anchored to the deleted one would throw at render time, so those
+    // are cut loose to the canvas rather than left pointing at nothing.
+    const next = layers
+      .filter((_, j) => j !== index)
+      .map((l) => {
+        if (typeof l.frame !== "object" || !l.frame) return l;
+        const frame = l.frame as Record<string, unknown>;
+        if (frame.below !== gone && frame.above !== gone) return l;
+        toast.message(`“${l.id}” was anchored to “${gone}” — it is now anchored to the canvas`);
+        return { ...l, frame: { ...frame, below: undefined, above: undefined, anchor: frame.anchor ?? "top-left" } };
+      });
+    if (selected === gone) setSelected(null);
+    write({ ...doc, layers: next });
+  };
+
   return (
+    <TooltipProvider>
     <div className="flex h-screen flex-col">
       {/* ┌ creative / project / name ───────────── ● live ┐ */}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3">
@@ -184,8 +243,9 @@ export function Editor() {
               const Icon = layerIcon(layer.type);
               const hasFinding = findings.some((f) => f.layer === lid);
               return (
+                <ContextMenu key={lid}>
+                <ContextMenuTrigger asChild>
                 <div
-                  key={lid}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
                     selected === lid ? "bg-neutral-900 text-white" : "hover:bg-neutral-100",
@@ -207,6 +267,48 @@ export function Editor() {
                   </button>
                   {hasFinding ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : null}
                 </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem
+                    icon={layer.hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    onSelect={() => patchLayer(i, { hidden: !layer.hidden })}
+                  >
+                    {layer.hidden ? "Show" : "Hide"}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon={<Copy className="h-3.5 w-3.5" />}
+                    onSelect={() => duplicateLayer(i)}
+                  >
+                    Duplicate
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    disabled={i === 0}
+                    icon={<ArrowUp className="h-3.5 w-3.5" />}
+                    onSelect={() => moveLayer(i, -1)}
+                  >
+                    Move earlier
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={i === layers.length - 1}
+                    icon={<ArrowDown className="h-3.5 w-3.5" />}
+                    onSelect={() => moveLayer(i, 1)}
+                  >
+                    Move later
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    danger
+                    icon={<Trash2 className="h-3.5 w-3.5" />}
+                    onSelect={() => {
+                      if (!confirm(`Delete the layer “${lid}”?`)) return;
+                      removeLayer(i);
+                    }}
+                  >
+                    Delete layer
+                  </ContextMenuItem>
+                </ContextMenuContent>
+                </ContextMenu>
               );
             })}
 
@@ -315,6 +417,7 @@ export function Editor() {
         </aside>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -388,12 +491,13 @@ function Inspector({
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">Runs</span>
-            <button
+            <IconButton
+              label="Add a run"
+              className="h-6 w-6"
               onClick={() => setRuns([...runs, { text: "TEXT", font: runs[0]?.font ?? "Anton", size: runs[0]?.size ?? 64, color: runs[0]?.color ?? "#111111" }])}
-              className="text-xs text-neutral-500 hover:text-neutral-900"
             >
-              + run
-            </button>
+              <Plus className="h-3.5 w-3.5" />
+            </IconButton>
           </div>
 
           {runs.map((run, i) => (
@@ -408,13 +512,14 @@ function Inspector({
                   }}
                 />
                 {runs.length > 1 ? (
-                  <button
+                  <IconButton
+                    label="Remove run"
+                    danger
+                    className="h-7 w-7 shrink-0 border-0"
                     onClick={() => setRuns(runs.filter((_, j) => j !== i))}
-                    aria-label="Remove run"
-                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-red-600"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </IconButton>
                 ) : null}
               </div>
               <div className="flex gap-1">
@@ -617,6 +722,7 @@ function Inspector({
       <div className="flex gap-1 border-t border-neutral-200 pt-3">
         <Button asChild variant="secondary" size="sm" className="flex-1">
           <a href={`/api/designs/${designId}/render?format=png`} download={`${designName}.png`}>
+            <Download className="h-3.5 w-3.5" />
             export png
           </a>
         </Button>
@@ -629,6 +735,7 @@ function Inspector({
             toast.success("Document JSON copied — it is exactly what the CLI reads");
           }}
         >
+          <Copy className="h-3.5 w-3.5" />
           copy JSON
         </Button>
       </div>
