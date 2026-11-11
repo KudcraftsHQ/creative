@@ -5,7 +5,7 @@
   "type": "module",
   "bin": { "creative-mcp": "src/index.ts" },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc-ts --noEmit"
   },
   "dependencies": {
     "@creative/core": "workspace:*",

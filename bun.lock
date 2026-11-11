@@ -6,6 +6,7 @@
       "name": "creative",
       "devDependencies": {
         "@types/bun": "latest",
+        "tsc-ts": "0.1.4",
         "typescript": "^5.6.3",
       },
     },
@@ -470,6 +471,20 @@
 
     "@tanstack/react-query": ["@tanstack/react-query@5.101.4", "", { "dependencies": { "@tanstack/query-core": "5.101.4" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-yRg2pfOCxIs4ZJW3XYYHU/WgtD04FHSnfHlpRT7h7pR77hwkdRG4wxbKe4aq6P0RvXUTBSQpQeadS1SUYUe+KA=="],
 
+    "@tsc-ts/darwin-arm64": ["@tsc-ts/darwin-arm64@0.1.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-44030XjvW1k1H33BYAlLYYB55bEDnH8utdQH7b2lnf334zbk76gcAU5GWO372aOkDuaAyl5t5QvT+BrlMjzeJg=="],
+
+    "@tsc-ts/darwin-x64": ["@tsc-ts/darwin-x64@0.1.4", "", { "os": "darwin", "cpu": "x64" }, "sha512-k0g+1UI7j4Q24MDQ9iuTN97K5mFmh4gvp+S28ax+nIutjVlIuzoEkwpfflZJ8sOMWOvdqN/FWbp0UXUPM9KcfA=="],
+
+    "@tsc-ts/linux-arm64-gnu": ["@tsc-ts/linux-arm64-gnu@0.1.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-NVSkfowyK3ML91Lx4SS/El5qMHvkbpMykOMSspyY15OjzgI0B0pvuSOBZzOmfp8OtoUPuhF0TcEt41ZODJYDvg=="],
+
+    "@tsc-ts/linux-arm64-musl": ["@tsc-ts/linux-arm64-musl@0.1.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-Az1hi797nxjjUkpcuBkRv7ta00tVSL1/RdIrRdYArhLp9N0bahRzNJO1ViPZ6lr5K9ig14MPAvnqYY9Z8Ol3sA=="],
+
+    "@tsc-ts/linux-x64-gnu": ["@tsc-ts/linux-x64-gnu@0.1.4", "", { "os": "linux", "cpu": "x64" }, "sha512-fBAM9oxmziSx6jvUbHfJCHNJK5KCTg0rgVw9eKMXopQhUvbSU/gp7RHBigFeCvG6T4J041QOMZ3d3e0Sk8/h3A=="],
+
+    "@tsc-ts/linux-x64-musl": ["@tsc-ts/linux-x64-musl@0.1.4", "", { "os": "linux", "cpu": "x64" }, "sha512-TNJUsxO4C7qdAqLRnzA80khVclliTVIYdZwUavDyqD3iy0AyL2mmGEf7iECOqwRg9n9H10SgRasPFSkgUuXPKA=="],
+
+    "@tsc-ts/win32-x64-msvc": ["@tsc-ts/win32-x64-msvc@0.1.4", "", { "os": "win32", "cpu": "x64" }, "sha512-hsCxlSaWoxLZwGNSWmVlr5HPZT75DxYS5nAwMkiptspr3yO8JKhxRl/zZMHoIe9LWijkfRsBWBpaxW83hZh0/g=="],
+
     "@types/babel__core": ["@types/babel__core@7.20.5", "", { "dependencies": { "@babel/parser": "^7.20.7", "@babel/types": "^7.20.7", "@types/babel__generator": "*", "@types/babel__template": "*", "@types/babel__traverse": "*" } }, "sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA=="],
 
     "@types/babel__generator": ["@types/babel__generator@7.27.0", "", { "dependencies": { "@babel/types": "^7.0.0" } }, "sha512-ufFd2Xi92OAVPYsy+P4n7/U7e68fex0+Ee8gSG9KX7eo084CWiQ4sdxktvdl0bOPupXtVJPY19zk6EwWqUQ8lg=="],
@@ -875,6 +890,8 @@
     "toidentifier": ["toidentifier@1.0.1", "", {}, "sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA=="],
 
     "ts-interface-checker": ["ts-interface-checker@0.1.13", "", {}, "sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA=="],
+
+    "tsc-ts": ["tsc-ts@0.1.4", "", { "optionalDependencies": { "@tsc-ts/darwin-arm64": "0.1.4", "@tsc-ts/darwin-x64": "0.1.4", "@tsc-ts/linux-arm64-gnu": "0.1.4", "@tsc-ts/linux-arm64-musl": "0.1.4", "@tsc-ts/linux-x64-gnu": "0.1.4", "@tsc-ts/linux-x64-musl": "0.1.4", "@tsc-ts/win32-x64-msvc": "0.1.4" }, "peerDependencies": { "@scriptc/threads": "0.4.8" }, "optionalPeers": ["@scriptc/threads"], "bin": { "tsc-ts": "bin/tsc-ts.js" } }, "sha512-/8s6YLKb1a3bTUMGw5okBcraGkaXq2M83RZ6EOy9VX4m5z2eMQT7Ou6CoydJyecrG+RzQcR4Sa80eCQfA2Sqaw=="],
 
     "tslib": ["tslib@2.8.1", "", {}, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
