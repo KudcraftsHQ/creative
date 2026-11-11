@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "bun --hot run src/index.ts",
     "build": "bun build src/index.ts --target=bun --outdir=dist --external @prisma/client --external .prisma/client --external @napi-rs/canvas",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-ts --noEmit",
     "test": "bun test tests/",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
